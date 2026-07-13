@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+// ✅ Import the configured API client instead of plain axios
+import { api } from '../store';   // adjust path if your store is elsewhere
 import { toast } from 'sonner';
 import { Check, PenTool, X, Sparkles, CircleCheck } from 'lucide-react';
-// ✅ Import logo
+// ✅ Logo import
 import logoImage from "../assets/logo1.png";
 
 export default function SignContract() {
-  // ✅ Use 'token' from URL instead of 'id'
+  // ✅ Use 'token' from URL
   const { token } = useParams();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -127,8 +128,8 @@ export default function SignContract() {
     }
     setLoading(true);
     try {
-      // ✅ Use token-based endpoint
-      await axios.post(`/api/reservations/sign/${token}`, {
+      // ✅ Use the configured api instance – base URL is already set
+      await api.post(`/reservations/sign/${token}`, {
         code,
         signature: signatureData,
       });
