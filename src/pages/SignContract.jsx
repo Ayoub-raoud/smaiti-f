@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 // ✅ Import the configured API client instead of plain axios
-import { api } from '../store';   // adjust path if your store is elsewhere
+import { api } from '../Redux/store';   // adjust path if your store is elsewhere
 import { toast } from 'sonner';
 import { Check, PenTool, X, Sparkles, CircleCheck } from 'lucide-react';
 // ✅ Logo import
-import logoImage from "../assets/logo1.png";
+import logoImage from "../../assets/logo1.png";
 
 export default function SignContract() {
   // ✅ Use 'token' from URL
