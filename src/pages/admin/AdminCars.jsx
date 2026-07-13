@@ -12,6 +12,7 @@ import {
   Star, Gem, Award, Heart, Zap, ArrowUpDown, ArrowUp, ArrowDown,
   Info, Crown, Briefcase, Activity, Clock, Key, Lock, Unlock
 } from "lucide-react";
+import { getImageUrl } from '../../utils/imageUtils';
 
 export default function AdminCars() {
   const dispatch = useDispatch();
@@ -686,7 +687,7 @@ export default function AdminCars() {
                           <td className="car-image-cell">
                             {(car.image_url || car.image) ? (
                               <img 
-                                src={car.image_url || car.image} 
+                                src={getImageUrl(car.image_url || car.image)}
                                 alt={`${car.brand} ${car.model}`}
                                 className="car-thumbnail"
                                 onError={(e) => e.target.style.display = 'none'}
@@ -747,7 +748,7 @@ export default function AdminCars() {
                       <div className="card-image">
                         {(car.image_url || car.image) ? (
                           <img 
-                            src={car.image_url || car.image} 
+                            src={getImageUrl(car.image_url || car.image)}
                             alt={`${car.brand} ${car.model}`}
                             onError={(e) => e.target.src = ''}
                           />

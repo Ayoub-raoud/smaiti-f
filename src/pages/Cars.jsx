@@ -19,6 +19,7 @@ import {
 } from "../Redux/store";
 import { toast } from "sonner";
 import { differenceInCalendarDays, format } from "date-fns";
+import { getImageUrl } from "../utils/imageUtils";
 
 export default function Cars() {
   const dispatch = useDispatch();
@@ -49,34 +50,6 @@ export default function Cars() {
     notes: "",
   });
 
-  // Function to get car image URL
-  const getCarImageUrl = (car) => {
-    if (!car) return null;
-
-    const possibleImageFields = ['image_url', 'image', 'img_url', 'photo', 'picture', 'car_image'];
-
-    for (const field of possibleImageFields) {
-      if (car[field] && typeof car[field] === 'string' && car[field].trim() !== '') {
-        let imageUrl = car[field];
-        if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-          return imageUrl;
-        }
-        if (imageUrl.startsWith('/storage/')) {
-          return `https://smaiti-b-production.up.railway.app${imageUrl}`;
-        }
-        if (!imageUrl.startsWith('/')) {
-          return `https://smaiti-b-production.up.railway.app/storage/${imageUrl}`;
-        }
-        return `https://smaiti-b-production.up.railway.app${imageUrl}`;
-      }
-    }
-    return null;
-  };
-
-  const handleImageError = (carId) => {
-    setImageErrors(prev => ({ ...prev, [carId]: true }));
-  };
-
   const location = useLocation();
 
   useEffect(() => {
@@ -99,6 +72,10 @@ export default function Cars() {
     }
   }, [params, cars]);
 
+  const handleImageError = (carId) => {
+    setImageErrors(prev => ({ ...prev, [carId]: true }));
+  };
+
   const days = useMemo(() => {
     if (!form.start_date || !form.end_date) return 0;
     return Math.max(
@@ -112,9 +89,6 @@ export default function Cars() {
     [days, selected]
   );
 
-  // --------------------------------------------------------------
-  // MODIFIED: openModal only if car is disponible
-  // --------------------------------------------------------------
   const openModal = (car) => {
     if (car.status !== 'disponible') {
       toast.warning(lang === "fr" ? "Ce véhicule n'est pas disponible pour le moment." : "هذه السيارة غير متاحة حالياً.");
@@ -162,13 +136,10 @@ export default function Cars() {
     try {
       let clientId = null;
 
-      // First check if client exists by email
       const existingClient = clients.find(client => client.email === form.email);
-
       if (existingClient) {
         clientId = existingClient.id;
       } else {
-        // Create new client
         const clientResult = await dispatch(
           createClient({
             nom: form.nom,
@@ -177,21 +148,14 @@ export default function Cars() {
             telephone: form.telephone,
           })
         ).unwrap();
-
         clientId = clientResult.client?.id || clientResult.data?.id || clientResult.id;
-
         if (!clientId) {
           throw new Error("Failed to create or find client");
         }
-
-        // Refresh clients list
         await dispatch(fetchClients());
       }
 
-      // Calculate rental days
       const rentalDays = days;
-
-      // Create reservation with the correct fields expected by the backend
       const reservationData = {
         car_id: selected.id,
         client_id: clientId,
@@ -210,15 +174,12 @@ export default function Cars() {
       };
 
       const result = await dispatch(createReservation(reservationData)).unwrap();
-
       if (result.error) {
         throw new Error(result.error);
       }
 
       setSubmitted(true);
       toast.success(lang === "fr" ? "Réservation confirmée !" : "تم تأكيد الحجز!");
-
-      // Refresh reservations and cars after successful booking
       setTimeout(() => {
         dispatch(fetchCars(true));
       }, 500);
@@ -226,7 +187,6 @@ export default function Cars() {
     } catch (error) {
       console.error("Reservation error:", error);
       let errorMessage = lang === "fr" ? "Erreur lors de la réservation" : "خطأ في الحجز";
-
       if (error.message) {
         errorMessage = error.message;
       } else if (error.response?.data?.message) {
@@ -234,7 +194,6 @@ export default function Cars() {
       } else if (typeof error === 'string') {
         errorMessage = error;
       }
-
       toast.error(errorMessage);
     } finally {
       setSearchingClient(false);
@@ -664,7 +623,7 @@ export default function Cars() {
 
         <div className="cars-grid">
           {cars.map((car, i) => {
-            const carImage = getCarImageUrl(car);
+            const carImage = getImageUrl(car.image_url || car.image);
             const hasError = imageErrors[car.id];
             const price = car.price_per_day || car.daily_price || 0;
             const isDisponible = car.status === 'disponible';
@@ -698,7 +657,6 @@ export default function Cars() {
                           </div>
                         </div>
                       )}
-                      {/* ---------- STATUS BADGE ---------- */}
                       <div className={`status-badge ${isDisponible ? 'disponible' : 'non-disponible'}`}>
                         {isDisponible ? 'Disponible' : 'Non disponible'}
                       </div>
@@ -741,7 +699,7 @@ export default function Cars() {
           })}
         </div>
 
-        {/* ===== RESERVATION MODAL ===== */}
+        {/* Reservation Modal */}
         <AnimatePresence>
           {isModalOpen && selected && (
             <motion.div
@@ -761,13 +719,11 @@ export default function Cars() {
               >
                 {!submitted ? (
                   <div className="bg-card border border-border rounded-3xl shadow-elevated overflow-hidden">
-                    {/* Modal Header with Car Info */}
                     <div className="relative">
-                      {/* Fixed height image container */}
                       <div className="relative h-56 md:h-64 overflow-hidden">
-                        {getCarImageUrl(selected) ? (
+                        {getImageUrl(selected.image_url || selected.image) ? (
                           <img
-                            src={getCarImageUrl(selected)}
+                            src={getImageUrl(selected.image_url || selected.image)}
                             alt={`${selected.brand} ${selected.model}`}
                             className="w-full h-full object-cover"
                           />
@@ -816,13 +772,10 @@ export default function Cars() {
                       </div>
                     </div>
 
-                    {/* Reservation Form */}
                     <form onSubmit={submit} className="p-4 md:p-6 pt-0 space-y-4">
-                      {/* Hidden time inputs - values are set but not displayed */}
                       <input type="hidden" name="start_time" value={form.start_time} />
                       <input type="hidden" name="end_time" value={form.end_time} />
 
-                      {/* Name fields - 2 columns on desktop */}
                       <div className="form-grid-2">
                         <div>
                           <label className="block text-sm font-medium mb-2">
@@ -852,7 +805,6 @@ export default function Cars() {
                         </div>
                       </div>
 
-                      {/* Email and Phone */}
                       <div className="form-grid-2">
                         <div>
                           <label className="block text-sm font-medium mb-2">
@@ -883,7 +835,6 @@ export default function Cars() {
                         </div>
                       </div>
 
-                      {/* Date fields */}
                       <div className="form-grid-2">
                         <div>
                           <label className="block text-sm font-medium mb-2">
@@ -926,7 +877,6 @@ export default function Cars() {
                         />
                       </div>
 
-                      {/* Price Summary */}
                       <div className="bg-secondary rounded-2xl p-4 mt-4">
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-sm text-muted-foreground">
@@ -942,7 +892,6 @@ export default function Cars() {
                         </div>
                       </div>
 
-                      {/* Submit & Cancel Buttons */}
                       <div className="flex flex-col sm:flex-row gap-2 mt-2">
                         <button
                           type="submit"

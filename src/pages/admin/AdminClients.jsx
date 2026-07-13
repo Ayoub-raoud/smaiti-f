@@ -13,6 +13,7 @@ import {
   Sparkles, Gem, Award, Heart, Zap, ArrowUpDown, ArrowUp, ArrowDown,
   Info, Activity, Key, Lock, Unlock, Crown, Briefcase, ArrowLeft
 } from "lucide-react";
+import { getImageUrl } from '../../utils/imageUtils';
 
 export default function AdminClients() {
   const dispatch = useDispatch();
@@ -509,7 +510,7 @@ export default function AdminClients() {
                   <div className="documents-grid">
                     {selectedClient.cin_image_url && (
                       <div className="document-card">
-                        <img src={selectedClient.cin_image_url} alt="CIN" />
+                        <img src={getImageUrl(selectedClient.driver_license_image_url)} alt="CIN" />
                         <span>CIN</span>
                       </div>
                     )}

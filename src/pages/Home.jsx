@@ -1,9 +1,9 @@
-// Home.jsx – Full CSS with normal class names
+// Home.jsx
 import React, { useEffect, useState, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { 
+import {
   ArrowRight, Sparkles, Zap, Headphones, Calendar, MapPin, Shield, Star,
   Mail, Phone, User, Check, X, Car
 } from "lucide-react";
@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { differenceInCalendarDays, format } from "date-fns";
 import heroCar from "../assets/hero-car.jpg";
+import { getImageUrl } from "../utils/imageUtils";
 
 export default function Home() {
   const dispatch = useDispatch();
@@ -35,13 +36,11 @@ export default function Home() {
   const clients = useSelector(selectClients);
   const reservationsLoading = useSelector(selectReservationsLoading);
 
-  // Carousel state
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [carouselCars, setCarouselCars] = useState([]);
   const [imageErrors, setImageErrors] = useState({});
   const [heroStartingPrice, setHeroStartingPrice] = useState(0);
 
-  // Modal state
   const [selected, setSelected] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -68,33 +67,14 @@ export default function Home() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
-  // Fetch data
   useEffect(() => {
     dispatch(fetchCars());
     dispatch(fetchReservations());
     dispatch(fetchClients());
   }, [dispatch]);
 
-  // Image helper
-  const getCarImageUrl = (car) => {
-    if (!car) return null;
-    const possibleImageFields = ['image_url', 'image', 'img_url', 'photo', 'picture', 'car_image'];
-    for (const field of possibleImageFields) {
-      if (car[field] && typeof car[field] === 'string' && car[field].trim() !== '') {
-        let imageUrl = car[field];
-        if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-          return imageUrl;
-        }
-        if (imageUrl.startsWith('/storage/')) {
-          return `https://smaiti-b-production.up.railway.app${imageUrl}`;
-        }
-        if (!imageUrl.startsWith('/')) {
-          return `https://smaiti-b-production.up.railway.app/storage/${imageUrl}`;
-        }
-        return `https://smaiti-b-production.up.railway.app${imageUrl}`;
-      }
-    }
-    return null;
+  const handleImageError = (carId) => {
+    setImageErrors(prev => ({ ...prev, [carId]: true }));
   };
 
   // Most reserved cars for carousel
@@ -132,7 +112,6 @@ export default function Home() {
     }
   }, [cars, reservations, currentImageIndex]);
 
-  // Auto-rotate carousel
   useEffect(() => {
     if (carouselCars.length <= 1) return;
     const interval = setInterval(() => {
@@ -143,13 +122,6 @@ export default function Home() {
 
   const displayedCars = cars.slice(0, 3);
 
-  const handleImageError = (carId) => {
-    setImageErrors(prev => ({ ...prev, [carId]: true }));
-  };
-
-  // --------------------------------------------------------------
-  // MODIFIED: openModal only if car is disponible
-  // --------------------------------------------------------------
   const openModal = (car) => {
     if (car.status !== 'disponible') {
       toast.warning(lang === "fr" ? "Ce véhicule n'est pas disponible pour le moment." : "هذه السيارة غير متاحة حالياً.");
@@ -275,26 +247,26 @@ export default function Home() {
   };
 
   const features = [
-    { 
-      icon: Sparkles, 
-      title: lang === "fr" ? "Véhicules premium" : "مركبات فاخرة", 
-      desc: lang === "fr" 
-        ? "Une collection exclusive entretenue avec soin." 
-        : "مجموعة حصرية يتم صيانته بعناية." 
+    {
+      icon: Sparkles,
+      title: lang === "fr" ? "Véhicules premium" : "مركبات فاخرة",
+      desc: lang === "fr"
+        ? "Une collection exclusive entretenue avec soin."
+        : "مجموعة حصرية يتم صيانته بعناية."
     },
-    { 
-      icon: Zap, 
-      title: lang === "fr" ? "Réservation rapide" : "حجز سريع", 
-      desc: lang === "fr" 
-        ? "Formulaire simple en moins de 60 secondes." 
-        : "نموذج بسيط في أقل من 60 ثانية." 
+    {
+      icon: Zap,
+      title: lang === "fr" ? "Réservation rapide" : "حجز سريع",
+      desc: lang === "fr"
+        ? "Formulaire simple en moins de 60 secondes."
+        : "نموذج بسيط في أقل من 60 ثانية."
     },
-    { 
-      icon: Headphones, 
-      title: lang === "fr" ? "Support 24/7" : "دعم على مدار الساعة", 
-      desc: lang === "fr" 
-        ? "Une équipe dédiée à votre service." 
-        : "فريق مخصص لخدمتك." 
+    {
+      icon: Headphones,
+      title: lang === "fr" ? "Support 24/7" : "دعم على مدار الساعة",
+      desc: lang === "fr"
+        ? "Une équipe dédiée à votre service."
+        : "فريق مخصص لخدمتك."
     }
   ];
 
@@ -1308,7 +1280,7 @@ export default function Home() {
                       {carouselCars[currentImageIndex] && (
                         <>
                           <img
-                            src={getCarImageUrl(carouselCars[currentImageIndex]) || heroCar}
+                            src={getImageUrl(carouselCars[currentImageIndex].image_url || carouselCars[currentImageIndex].image) || heroCar}
                             alt={`${carouselCars[currentImageIndex].brand} ${carouselCars[currentImageIndex].model}`}
                             className="carousel-image"
                             onError={(e) => { e.target.src = heroCar; }}
@@ -1401,7 +1373,7 @@ export default function Home() {
               ) : (
                 <div className="cars-grid">
                   {displayedCars.map((car, i) => {
-                    const carImage = getCarImageUrl(car);
+                    const carImage = getImageUrl(car.image_url || car.image);
                     const hasError = imageErrors[car.id];
                     const isDisponible = car.status === 'disponible';
 
@@ -1415,8 +1387,8 @@ export default function Home() {
                           >
                             <div className="car-card-image relative">
                               {carImage && !hasError ? (
-                                <img 
-                                  src={carImage} 
+                                <img
+                                  src={carImage}
                                   alt={`${car.brand} ${car.model}`}
                                   onError={() => handleImageError(car.id)}
                                 />
@@ -1432,7 +1404,6 @@ export default function Home() {
                                   </div>
                                 </div>
                               )}
-                              {/* ---------- STATUS BADGE ---------- */}
                               <div className={`status-badge ${isDisponible ? 'disponible' : 'non-disponible'}`}>
                                 {isDisponible ? 'Disponible' : 'Non disponible'}
                               </div>
@@ -1559,7 +1530,7 @@ export default function Home() {
         </section>
       </div>
 
-      {/* RESERVATION MODAL – EXACT COPY FROM Cars.jsx with normal CSS */}
+      {/* Reservation Modal */}
       <AnimatePresence>
         {isModalOpen && selected && (
           <motion.div
@@ -1579,12 +1550,11 @@ export default function Home() {
             >
               {!submitted ? (
                 <div className="bg-card border border-border rounded-3xl shadow-elevated overflow-hidden">
-                  {/* Modal Header with Car Image */}
                   <div className="relative">
                     <div className="relative h-56 md:h-64 overflow-hidden">
-                      {getCarImageUrl(selected) ? (
+                      {getImageUrl(selected.image_url || selected.image) ? (
                         <img
-                          src={getCarImageUrl(selected)}
+                          src={getImageUrl(selected.image_url || selected.image)}
                           alt={`${selected.brand} ${selected.model}`}
                           className="w-full h-full object-cover"
                         />
@@ -1617,8 +1587,8 @@ export default function Home() {
                             <span className="text-xs text-muted-foreground capitalize">{selected.color}</span>
                             <span className="text-xs text-muted-foreground">•</span>
                             <span className="text-xs text-muted-foreground capitalize">
-                              {selected.transmission === "automatic" || selected.type === "automatic" 
-                                ? t("cars.automatic") 
+                              {selected.transmission === "automatic" || selected.type === "automatic"
+                                ? t("cars.automatic")
                                 : t("cars.manual")}
                             </span>
                           </div>
@@ -1790,13 +1760,13 @@ export default function Home() {
                     {lang === "fr" ? "Réservation confirmée !" : "تم تأكيد الحجز!"}
                   </h2>
                   <p className="text-muted-foreground mb-6">
-                    {lang === "fr" 
-                      ? `Votre réservation pour ${selected.brand} ${selected.model} a bien été enregistrée.` 
+                    {lang === "fr"
+                      ? `Votre réservation pour ${selected.brand} ${selected.model} a bien été enregistrée.`
                       : `تم تسجيل حجزك لسيارة ${selected.brand} ${selected.model} بنجاح.`}
                   </p>
                   <p className="text-sm text-muted-foreground mb-6">
-                    {lang === "fr" 
-                      ? "Vous recevrez un email de confirmation dans quelques instants." 
+                    {lang === "fr"
+                      ? "Vous recevrez un email de confirmation dans quelques instants."
                       : "ستتلقى بريدًا إلكترونيًا للتأكيد في غضون لحظات."}
                   </p>
                   <button
