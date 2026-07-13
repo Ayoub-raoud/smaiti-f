@@ -22,22 +22,28 @@ import axios from 'axios';
 const DocumentPreview = ({ url, label }) => {
   const [blobUrl, setBlobUrl] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [isPdf, setIsPdf] = useState(false);
 
   const fetchPrivateDocument = async (documentUrl) => {
     if (!documentUrl) return null;
     try {
+      const token = localStorage.getItem('authToken');
       const response = await axios.get(documentUrl, {
         responseType: 'blob',
         withCredentials: true,
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: token ? `Bearer ${token}` : '',
         },
       });
-      return URL.createObjectURL(response.data);
+      if (response.status === 200) {
+        return URL.createObjectURL(response.data);
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
     } catch (error) {
       console.error('Failed to fetch private document:', error);
-      return null;
+      throw error;
     }
   };
 
@@ -78,19 +84,38 @@ const DocumentPreview = ({ url, label }) => {
   };
 
   useEffect(() => {
+    let isMounted = true;
     const fetchDoc = async () => {
-      const result = await fetchPrivateDocument(url);
-      setBlobUrl(result);
-      setLoading(false);
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await fetchPrivateDocument(url);
+        if (isMounted) {
+          setBlobUrl(result);
+          setLoading(false);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message || 'Erreur de chargement');
+          setLoading(false);
+        }
+      }
     };
-    fetchDoc();
-    setIsPdf(isPdfFile(url));
+    if (url) {
+      setIsPdf(isPdfFile(url));
+      fetchDoc();
+    } else {
+      setLoading(false);
+      setError('URL du document manquante');
+    }
     return () => {
+      isMounted = false;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
   }, [url]);
 
   if (loading) return <div className="document-card">Chargement...</div>;
+  if (error) return <div className="document-card" style={{color: '#dc2626'}}>Erreur: {error}</div>;
   if (!blobUrl) return <div className="document-card">Impossible de charger le document</div>;
 
   const filename = url.split('/').pop() || `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
@@ -136,22 +161,28 @@ const DocumentPreview = ({ url, label }) => {
 const FormDocumentPreview = ({ data, label, onRemove }) => {
   const [displayUrl, setDisplayUrl] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [isPdf, setIsPdf] = useState(false);
 
   const fetchPrivateDocument = async (documentUrl) => {
     if (!documentUrl) return null;
     try {
+      const token = localStorage.getItem('authToken');
       const response = await axios.get(documentUrl, {
         responseType: 'blob',
         withCredentials: true,
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: token ? `Bearer ${token}` : '',
         },
       });
-      return URL.createObjectURL(response.data);
+      if (response.status === 200) {
+        return URL.createObjectURL(response.data);
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
     } catch (error) {
       console.error('Failed to fetch private document:', error);
-      return null;
+      throw error;
     }
   };
 
@@ -192,21 +223,36 @@ const FormDocumentPreview = ({ data, label, onRemove }) => {
   };
 
   useEffect(() => {
+    let isMounted = true;
     const load = async () => {
-      if (data && data.startsWith('data:')) {
-        setDisplayUrl(data);
-        setLoading(false);
-      } else if (data) {
-        const blob = await fetchPrivateDocument(data);
-        setDisplayUrl(blob);
-        setLoading(false);
-      } else {
-        setLoading(false);
+      setLoading(true);
+      setError(null);
+      try {
+        if (data && data.startsWith('data:')) {
+          setDisplayUrl(data);
+          setLoading(false);
+        } else if (data) {
+          const blob = await fetchPrivateDocument(data);
+          if (isMounted) setDisplayUrl(blob);
+          setLoading(false);
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message || 'Erreur');
+          setLoading(false);
+        }
       }
     };
-    load();
-    setIsPdf(isPdfFile(data));
+    if (data) {
+      setIsPdf(isPdfFile(data));
+      load();
+    } else {
+      setLoading(false);
+    }
     return () => {
+      isMounted = false;
       if (displayUrl && !displayUrl.startsWith('data:')) {
         URL.revokeObjectURL(displayUrl);
       }
@@ -214,6 +260,7 @@ const FormDocumentPreview = ({ data, label, onRemove }) => {
   }, [data]);
 
   if (loading) return <div className="image-preview-container">Chargement...</div>;
+  if (error) return <div className="image-preview-container" style={{color: '#dc2626'}}>Erreur: {error}</div>;
   if (!displayUrl) return <div className="image-preview-container">Impossible de charger</div>;
 
   const filename = `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
