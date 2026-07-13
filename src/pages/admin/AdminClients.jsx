@@ -11,7 +11,8 @@ import {
   DollarSign, History, Receipt, Car, AlertCircle, CheckCircle,
   FileWarning, TrendingUp, TrendingDown, Wallet, CalendarDays,
   Sparkles, Gem, Award, Heart, Zap, ArrowUpDown, ArrowUp, ArrowDown,
-  Info, Activity, Key, Lock, Unlock, Crown, Briefcase, ArrowLeft
+  Info, Activity, Key, Lock, Unlock, Crown, Briefcase, ArrowLeft,
+  Download, ExternalLink
 } from "lucide-react";
 import { getImageUrl } from '../../utils/imageUtils';
 
@@ -274,7 +275,6 @@ export default function AdminClients() {
   const getPaymentHistoryArray = (reservation) => {
     if (!reservation.payment_history) return [];
     if (Array.isArray(reservation.payment_history)) return reservation.payment_history;
-    // If it's a JSON string, parse it
     if (typeof reservation.payment_history === 'string') {
       try {
         const parsed = JSON.parse(reservation.payment_history);
@@ -284,6 +284,147 @@ export default function AdminClients() {
       }
     }
     return [];
+  };
+
+  // ---- Robust download function (force download to user's Downloads folder) ----
+  const downloadFile = async (url, filename) => {
+    try {
+      toast.info("Téléchargement en cours...");
+      const response = await fetch(url, {
+        headers: {
+          // Optional: add auth token if needed
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        }
+      });
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+      
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'document.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Revoke the blob URL after a short delay
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      toast.success("Téléchargement terminé");
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error("Erreur lors du téléchargement");
+    }
+  };
+
+  // ---- PDF detection ----
+  const isPdfFile = (url) => {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    if (lower.startsWith('data:application/pdf')) return true;
+    if (lower.endsWith('.pdf')) return true;
+    return false;
+  };
+
+  // ---- Render document preview in details view ----
+  const renderDocumentPreview = (url, label) => {
+    if (!url) return null;
+    const fullUrl = getImageUrl(url);
+    if (!fullUrl) return null;
+
+    const isPdf = isPdfFile(fullUrl);
+    // Generate a clean filename from URL
+    const filename = fullUrl.split('/').pop() || `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
+
+    if (isPdf) {
+      return (
+        <div className="document-card pdf-card">
+          <div className="pdf-icon-wrapper">
+            <FileText size={48} className="pdf-icon" />
+          </div>
+          <div className="pdf-actions">
+            <a 
+              href={fullUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="pdf-action-btn view"
+            >
+              <ExternalLink size={14} /> Voir PDF
+            </a>
+            <button
+              onClick={() => downloadFile(fullUrl, filename)}
+              className="pdf-action-btn download"
+            >
+              <Download size={14} /> Télécharger
+            </button>
+          </div>
+          <span className="document-label">{label}</span>
+        </div>
+      );
+    }
+
+    // Image fallback
+    return (
+      <div className="document-card">
+        <img src={fullUrl} alt={label} className="document-image" />
+        <span className="document-label">{label}</span>
+      </div>
+    );
+  };
+
+  // ---- Render preview in form (for base64 data URLs) ----
+  const renderFormDocumentPreview = (dataUrl, label, onRemove) => {
+    if (!dataUrl) return null;
+
+    const isPdf = isPdfFile(dataUrl);
+    const filename = `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
+
+    if (isPdf) {
+      return (
+        <div className="image-preview-container pdf-preview-container">
+          <div className="pdf-icon-wrapper">
+            <FileText size={40} className="pdf-icon" />
+          </div>
+          <div className="pdf-actions small">
+            <a 
+              href={dataUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="pdf-action-btn view"
+            >
+              <ExternalLink size={12} /> Voir
+            </a>
+            <button
+              onClick={() => downloadFile(dataUrl, filename)}
+              className="pdf-action-btn download"
+            >
+              <Download size={12} /> Télécharger
+            </button>
+          </div>
+          <button 
+            type="button" 
+            className="remove-image-btn"
+            onClick={onRemove}
+          >
+            <X size={14} /> Supprimer
+          </button>
+        </div>
+      );
+    }
+
+    // Image preview
+    return (
+      <div className="image-preview-container">
+        <img src={dataUrl} alt={label} className="image-preview" />
+        <button 
+          type="button" 
+          className="remove-image-btn"
+          onClick={onRemove}
+        >
+          <X size={14} /> Supprimer
+        </button>
+      </div>
+    );
   };
 
   const handleCreateClient = async (data) => {
@@ -503,23 +644,13 @@ export default function AdminClients() {
                 </div>
               </div>
 
-              {/* Document Images */}
+              {/* Document Images - now with PDF support */}
               {(selectedClient.cin_image_url || selectedClient.driver_license_image_url) && (
                 <div className="client-documents">
                   <h4>Documents scannés</h4>
                   <div className="documents-grid">
-                    {selectedClient.cin_image_url && (
-                      <div className="document-card">
-                        <img src={getImageUrl(selectedClient.driver_license_image_url)} alt="CIN" />
-                        <span>CIN</span>
-                      </div>
-                    )}
-                    {selectedClient.driver_license_image_url && (
-                      <div className="document-card">
-                        <img src={selectedClient.driver_license_image_url} alt="Permis" />
-                        <span>Permis de conduire</span>
-                      </div>
-                    )}
+                    {selectedClient.cin_image_url && renderDocumentPreview(selectedClient.cin_image_url, "CIN")}
+                    {selectedClient.driver_license_image_url && renderDocumentPreview(selectedClient.driver_license_image_url, "Permis de conduire")}
                   </div>
                 </div>
               )}
@@ -926,17 +1057,10 @@ export default function AdminClients() {
                         <p style={{ fontSize: '0.7rem', color: '#64748b' }}>JPG, PNG, PDF - 5MB max</p>
                         <input type="file" id="cinInput" accept="image/*,application/pdf" onChange={(e) => handleFileChange('cin_image', e.target.files[0])} style={{ display: 'none' }} />
                       </div>
-                      {cinPreview && (
-                        <div className="image-preview-container">
-                          <img src={cinPreview} alt="CIN Preview" className="image-preview" />
-                          <button 
-                            type="button" 
-                            className="remove-image-btn"
-                            onClick={() => { setCinPreview(''); setFormData({...formData, cin_image: ''}); }}
-                          >
-                            <X size={14} /> Supprimer
-                          </button>
-                        </div>
+                      {cinPreview && renderFormDocumentPreview(
+                        cinPreview,
+                        "CIN",
+                        () => { setCinPreview(''); setFormData({...formData, cin_image: ''}); }
                       )}
                     </div>
                     <div className="inline-field">
@@ -947,17 +1071,10 @@ export default function AdminClients() {
                         <p style={{ fontSize: '0.7rem', color: '#64748b' }}>JPG, PNG, PDF - 5MB max</p>
                         <input type="file" id="licenseInput" accept="image/*,application/pdf" onChange={(e) => handleFileChange('driver_license_image', e.target.files[0])} style={{ display: 'none' }} />
                       </div>
-                      {licensePreview && (
-                        <div className="image-preview-container">
-                          <img src={licensePreview} alt="Permis Preview" className="image-preview" />
-                          <button 
-                            type="button" 
-                            className="remove-image-btn"
-                            onClick={() => { setLicensePreview(''); setFormData({...formData, driver_license_image: ''}); }}
-                          >
-                            <X size={14} /> Supprimer
-                          </button>
-                        </div>
+                      {licensePreview && renderFormDocumentPreview(
+                        licensePreview,
+                        "Permis",
+                        () => { setLicensePreview(''); setFormData({...formData, driver_license_image: ''}); }
                       )}
                     </div>
                   </div>
@@ -1718,20 +1835,114 @@ export default function AdminClients() {
 
   .document-card {
     text-align: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
+    background: white;
+    max-width: 200px;
   }
 
-  .document-card img {
-    width: 100px;
-    height: 100px;
+  .document-image {
+    width: 120px;
+    height: 120px;
     object-fit: cover;
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid #e2e8f0;
     margin-bottom: 8px;
   }
 
-  .document-card span {
+  .document-label {
     font-size: 0.7rem;
     color: #64748b;
+    display: block;
+    margin-top: 4px;
+  }
+
+  /* PDF Card Styles */
+  .pdf-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    min-width: 140px;
+  }
+
+  .pdf-icon-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 80px;
+    height: 80px;
+    background: #fef3c7;
+    border-radius: 12px;
+    color: #b45309;
+  }
+
+  .pdf-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .pdf-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .pdf-actions.small .pdf-action-btn {
+    font-size: 0.65rem;
+    padding: 4px 8px;
+  }
+
+  .pdf-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    background: none;
+  }
+
+  .pdf-action-btn.view {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+  .pdf-action-btn.view:hover {
+    background: #bfdbfe;
+  }
+
+  .pdf-action-btn.download {
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+  .pdf-action-btn.download:hover {
+    background: #b8e2f8;
+  }
+
+  /* PDF preview in form */
+  .pdf-preview-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #fefce8;
+    border-radius: 12px;
+    border: 1px solid #fde047;
+  }
+
+  .pdf-preview-container .pdf-icon-wrapper {
+    width: 60px;
+    height: 60px;
   }
 
   /* Client Stats Section */
@@ -2495,20 +2706,24 @@ export default function AdminClients() {
     .payment-card-header-full { flex-direction: column; align-items: flex-start; }
     .payment-amounts-full { flex-wrap: wrap; }
     .details-tabs-full { flex-wrap: wrap; }
+    .documents-grid {
+      justify-content: center;
+    }
   }
 
   /* Dark mode */
   @media (prefers-color-scheme: dark) {
     body { background: #0f172a; }
     .stat-card, .table-wrapper, .search-wrapper, .modal, .inline-form-container, 
-    .inline-details-container, .reservation-card, .accident-card, .payment-card-full {
+    .inline-details-container, .reservation-card, .accident-card, .payment-card-full,
+    .document-card {
       background: #1e293b;
       border-color: #334155;
     }
     .stat-label, .table-info-text, .table th, .subtitle, .delete-message, 
     .identity-label, .payment-date, .payment-notes, .no-payments-full,
     .empty-state-full, .vehicle-matricule, .days-count, .accident-description,
-    .payment-car-name, .stat-label {
+    .payment-car-name, .stat-label, .document-label {
       color: #94a3b8;
     }
     .title {
@@ -2594,148 +2809,167 @@ export default function AdminClients() {
       background: #0f172a;
       border-color: #334155;
     }
+    .pdf-icon-wrapper {
+      background: #422006;
+      color: #fde047;
+    }
+    .pdf-action-btn.view {
+      background: #1e3a5f;
+      color: #60a5fa;
+    }
+    .pdf-action-btn.view:hover {
+      background: #1e4a7a;
+    }
+    .pdf-action-btn.download {
+      background: #164e63;
+      color: #67e8f9;
+    }
+    .pdf-action-btn.download:hover {
+      background: #1e6b80;
+    }
+    .pdf-preview-container {
+      background: #422006;
+      border-color: #713f12;
+    }
+    .remove-image-btn {
+      background: #7f1d1d;
+      color: #fca5a5;
+    }
+    .document-image {
+      border-color: #334155;
+    }
   }
-    /* Add these styles to ALL admin pages (AdminReservations, AdminCars, AdminUsers, AdminMatricules, AdminClients, AdminAccidents, AdminPayments) */
 
-/* Fix horizontal overflow on zoom */
-html, body {
-  overflow-x: auto !important;
-  min-width: 320px;
-}
-
-.admin-container,
-.inline-form-container,
-.inline-details-container {
-  overflow-x: auto !important;
-  min-width: 0;
-  width: 100%;
-}
-
-.inline-form,
-.inline-details-content {
-  overflow-x: auto !important;
-}
-
-.inline-form-grid {
-  min-width: 600px;
-}
-
-@media (max-width: 768px) {
-  .inline-form-grid {
-    min-width: 100%;
+  /* Fix horizontal overflow on zoom */
+  html, body {
+    overflow-x: auto !important;
+    min-width: 320px;
   }
-}
 
-/* Allow horizontal scroll on tables */
-.table-wrapper,
-.inline-form,
-.inline-details-content {
-  overflow-x: auto !important;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Ensure containers can scroll horizontally */
-.admin-container,
-.inline-form-container,
-.inline-details-container {
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-/* Fix for zoom - prevent content from being cut off */
-@media screen and (max-width: 1400px) {
-  .admin-container {
-    padding: 1rem;
-    overflow-x: auto;
-  }
-  
-  .inline-form-grid {
-    grid-template-columns: 1fr;
-    min-width: auto;
-  }
-}
-
-/* Ensure body can scroll horizontally when needed */
-body {
-  overflow-x: auto;
-  min-width: 320px;
-}
-
-/* Table responsive fixes */
-.table {
-  min-width: 800px;
-}
-
-@media (max-width: 768px) {
-  .table {
-    min-width: 700px;
-  }
-}
-
-/* Cards grid responsive */
-.cards-grid {
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
-}
-
-/* Forms - prevent overflow */
-.inline-section {
-  overflow-x: auto;
-}
-
-.inline-grid-2 {
-  min-width: 280px;
-}
-
-@media (max-width: 640px) {
-  .inline-grid-2 {
-    grid-template-columns: 1fr;
-    min-width: auto;
-  }
-  
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-    overflow-x: auto;
-  }
-  
-  .action-buttons {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-  
-  .modal {
-    max-width: 95%;
-    margin: 0 auto;
-  }
-}
-
-/* Fix for zoom levels 150%+ */
-@media screen and (min-resolution: 120dpi) {
   .admin-container,
   .inline-form-container,
   .inline-details-container {
-    padding: 0.75rem;
+    overflow-x: auto !important;
+    min-width: 0;
+    width: 100%;
   }
-  
-  .inline-form {
-    padding: 1rem;
-  }
-  
-  .stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  }
-  
-  .cards-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
-/* Ensure all containers respect viewport */
-* {
-  max-width: 100%;
-  box-sizing: border-box;
-}
-`}</style>
-      </>
-    );
+  .inline-form,
+  .inline-details-content {
+    overflow-x: auto !important;
   }
+
+  .inline-form-grid {
+    min-width: 600px;
+  }
+
+  @media (max-width: 768px) {
+    .inline-form-grid {
+      min-width: 100%;
+    }
+  }
+
+  .table-wrapper,
+  .inline-form,
+  .inline-details-content {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-container,
+  .inline-form-container,
+  .inline-details-container {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  @media screen and (max-width: 1400px) {
+    .admin-container {
+      padding: 1rem;
+      overflow-x: auto;
+    }
+    
+    .inline-form-grid {
+      grid-template-columns: 1fr;
+      min-width: auto;
+    }
+  }
+
+  body {
+    overflow-x: auto;
+    min-width: 320px;
+  }
+
+  .table {
+    min-width: 800px;
+  }
+
+  @media (max-width: 768px) {
+    .table {
+      min-width: 700px;
+    }
+  }
+
+  .cards-grid {
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+  }
+
+  .inline-section {
+    overflow-x: auto;
+  }
+
+  .inline-grid-2 {
+    min-width: 280px;
+  }
+
+  @media (max-width: 640px) {
+    .inline-grid-2 {
+      grid-template-columns: 1fr;
+      min-width: auto;
+    }
+    
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+      overflow-x: auto;
+    }
+    
+    .action-buttons {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    
+    .modal {
+      max-width: 95%;
+      margin: 0 auto;
+    }
+  }
+
+  @media screen and (min-resolution: 120dpi) {
+    .admin-container,
+    .inline-form-container,
+    .inline-details-container {
+      padding: 0.75rem;
+    }
+    
+    .inline-form {
+      padding: 1rem;
+    }
+    
+    .stats-grid {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+    
+    .cards-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+`}</style>
+    </>
+  );
+}
