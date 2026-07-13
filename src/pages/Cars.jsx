@@ -62,12 +62,12 @@ export default function Cars() {
           return imageUrl;
         }
         if (imageUrl.startsWith('/storage/')) {
-          return `https://smaiti-b-production.up.railway.app/${imageUrl}`;
+          return `https://smaiti-b-production.up.railway.app${imageUrl}`;
         }
         if (!imageUrl.startsWith('/')) {
-          return `https://smaiti-b-production.up.railway.app//storage/${imageUrl}`;
+          return `https://smaiti-b-production.up.railway.app/storage/${imageUrl}`;
         }
-        return `https://smaiti-b-production.up.railway.app/${imageUrl}`;
+        return `https://smaiti-b-production.up.railway.app${imageUrl}`;
       }
     }
     return null;

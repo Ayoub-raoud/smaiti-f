@@ -49,7 +49,7 @@ const blobToBase64 = (blob) =>
   });
 
 const formatMoney = (val) => `${Number(val || 0).toFixed(2)} DH`;
-const API_URL = "https://smaiti-b-production.up.railway.app//api";
+const API_URL = "https://smaiti-b-production.up.railway.app/api";
 
 // ==================== Report Modal Components ====================
 // ---------- Create Report Modal (with dropdown above) ----------

@@ -2,7 +2,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 
-const api = axios.create({ baseURL: 'https://smaiti-b-production.up.railway.app//api' });
+const api = axios.create({ baseURL: 'https://smaiti-b-production.up.railway.app/api' });
 
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('authToken');

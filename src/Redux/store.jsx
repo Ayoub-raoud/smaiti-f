@@ -6,7 +6,7 @@ import permissionReducer from './permissionSlice';
 
 // Configuration d'Axios avec baseURL
 const api = axios.create({
-  baseURL: "https://smaiti-b-production.up.railway.app//api",
+  baseURL: "https://smaiti-b-production.up.railway.app/api",
   headers: {
     "Accept": "application/json",
     "Content-Type": "application/json"
