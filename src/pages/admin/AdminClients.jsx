@@ -14,9 +14,260 @@ import {
   Info, Activity, Key, Lock, Unlock, Crown, Briefcase, ArrowLeft,
   Download, ExternalLink
 } from "lucide-react";
-import { getImageUrl } from '../../utils/imageUtils';
-import axios from 'axios'; // needed for private document fetching
+import axios from 'axios';
 
+// ============================================================
+// NEW: DocumentPreview Component (for details view)
+// ============================================================
+const DocumentPreview = ({ url, label }) => {
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isPdf, setIsPdf] = useState(false);
+
+  const fetchPrivateDocument = async (documentUrl) => {
+    if (!documentUrl) return null;
+    try {
+      const response = await axios.get(documentUrl, {
+        responseType: 'blob',
+        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        },
+      });
+      return URL.createObjectURL(response.data);
+    } catch (error) {
+      console.error('Failed to fetch private document:', error);
+      return null;
+    }
+  };
+
+  const isPdfFile = (url) => {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    if (lower.startsWith('data:application/pdf')) return true;
+    if (lower.endsWith('.pdf')) return true;
+    return false;
+  };
+
+  const downloadFile = async (url, filename) => {
+    try {
+      toast.info("Téléchargement en cours...");
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        }
+      });
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+      
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'document.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      toast.success("Téléchargement terminé");
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error("Erreur lors du téléchargement");
+    }
+  };
+
+  useEffect(() => {
+    const fetchDoc = async () => {
+      const result = await fetchPrivateDocument(url);
+      setBlobUrl(result);
+      setLoading(false);
+    };
+    fetchDoc();
+    setIsPdf(isPdfFile(url));
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [url]);
+
+  if (loading) return <div className="document-card">Chargement...</div>;
+  if (!blobUrl) return <div className="document-card">Impossible de charger le document</div>;
+
+  const filename = url.split('/').pop() || `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
+
+  if (isPdf) {
+    return (
+      <div className="document-card pdf-card">
+        <div className="pdf-icon-wrapper">
+          <FileText size={48} className="pdf-icon" />
+        </div>
+        <div className="pdf-actions">
+          <a 
+            href={blobUrl} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="pdf-action-btn view"
+          >
+            <ExternalLink size={14} /> Voir PDF
+          </a>
+          <button
+            onClick={() => downloadFile(url, filename)}
+            className="pdf-action-btn download"
+          >
+            <Download size={14} /> Télécharger
+          </button>
+        </div>
+        <span className="document-label">{label}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="document-card">
+      <img src={blobUrl} alt={label} className="document-image" />
+      <span className="document-label">{label}</span>
+    </div>
+  );
+};
+
+// ============================================================
+// NEW: FormDocumentPreview Component (for form preview)
+// ============================================================
+const FormDocumentPreview = ({ data, label, onRemove }) => {
+  const [displayUrl, setDisplayUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isPdf, setIsPdf] = useState(false);
+
+  const fetchPrivateDocument = async (documentUrl) => {
+    if (!documentUrl) return null;
+    try {
+      const response = await axios.get(documentUrl, {
+        responseType: 'blob',
+        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        },
+      });
+      return URL.createObjectURL(response.data);
+    } catch (error) {
+      console.error('Failed to fetch private document:', error);
+      return null;
+    }
+  };
+
+  const isPdfFile = (url) => {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    if (lower.startsWith('data:application/pdf')) return true;
+    if (lower.endsWith('.pdf')) return true;
+    return false;
+  };
+
+  const downloadFile = async (url, filename) => {
+    try {
+      toast.info("Téléchargement en cours...");
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        }
+      });
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+      
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'document.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      toast.success("Téléchargement terminé");
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error("Erreur lors du téléchargement");
+    }
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      if (data && data.startsWith('data:')) {
+        setDisplayUrl(data);
+        setLoading(false);
+      } else if (data) {
+        const blob = await fetchPrivateDocument(data);
+        setDisplayUrl(blob);
+        setLoading(false);
+      } else {
+        setLoading(false);
+      }
+    };
+    load();
+    setIsPdf(isPdfFile(data));
+    return () => {
+      if (displayUrl && !displayUrl.startsWith('data:')) {
+        URL.revokeObjectURL(displayUrl);
+      }
+    };
+  }, [data]);
+
+  if (loading) return <div className="image-preview-container">Chargement...</div>;
+  if (!displayUrl) return <div className="image-preview-container">Impossible de charger</div>;
+
+  const filename = `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
+
+  if (isPdf) {
+    return (
+      <div className="image-preview-container pdf-preview-container">
+        <div className="pdf-icon-wrapper">
+          <FileText size={40} className="pdf-icon" />
+        </div>
+        <div className="pdf-actions small">
+          <a 
+            href={displayUrl} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="pdf-action-btn view"
+          >
+            <ExternalLink size={12} /> Voir
+          </a>
+          <button
+            onClick={() => downloadFile(data, filename)}
+            className="pdf-action-btn download"
+          >
+            <Download size={12} /> Télécharger
+          </button>
+        </div>
+        <button 
+          type="button" 
+          className="remove-image-btn"
+          onClick={onRemove}
+        >
+          <X size={14} /> Supprimer
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="image-preview-container">
+      <img src={displayUrl} alt={label} className="image-preview" />
+      <button 
+        type="button" 
+        className="remove-image-btn"
+        onClick={onRemove}
+      >
+        <X size={14} /> Supprimer
+      </button>
+    </div>
+  );
+};
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function AdminClients() {
   const dispatch = useDispatch();
   const clients = useSelector(selectClients);
@@ -35,12 +286,11 @@ export default function AdminClients() {
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [cinPreview, setCinPreview] = useState('');   // can be blob URL or base64
+  const [cinPreview, setCinPreview] = useState('');
   const [licensePreview, setLicensePreview] = useState('');
   const [activeTab, setActiveTab] = useState('reservations');
   const [dataLoaded, setDataLoaded] = useState(false);
   
-  // Sorting state
   const [sortField, setSortField] = useState("id");
   const [sortDirection, setSortDirection] = useState("desc");
   
@@ -62,7 +312,6 @@ export default function AdminClients() {
     permis_delivre_le: ""
   });
 
-  // Helper to format date to YYYY-MM-DD
   const formatDateForInput = (dateString) => {
     if (!dateString) return "";
     try {
@@ -74,21 +323,22 @@ export default function AdminClients() {
     }
   };
 
-  // ---------- PRIVATE DOCUMENT FETCHER (for preview) ----------
-  const fetchPrivateDocument = async (url) => {
-    if (!url) return null;
-    try {
-      const response = await axios.get(url, {
-        responseType: 'blob',
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-      return URL.createObjectURL(response.data);
-    } catch (error) {
-      console.error('Failed to fetch private document:', error);
-      return null;
+  const handleFileChange = (field, file) => {
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Le fichier ne doit pas dépasser 5MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, [field]: reader.result });
+        if (field === 'cin_image') setCinPreview(reader.result);
+        if (field === 'driver_license_image') setLicensePreview(reader.result);
+      };
+      reader.onerror = () => {
+        toast.error("Erreur lors de la lecture du fichier");
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -136,25 +386,6 @@ export default function AdminClients() {
       return matricules.find(m => m.id === reservation.matricule_id);
     }
     return null;
-  };
-
-  const handleFileChange = (field, file) => {
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("Le fichier ne doit pas dépasser 5MB");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({ ...formData, [field]: reader.result });
-        if (field === 'cin_image') setCinPreview(reader.result);
-        if (field === 'driver_license_image') setLicensePreview(reader.result);
-      };
-      reader.onerror = () => {
-        toast.error("Erreur lors de la lecture du fichier");
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   // Get client's reservations with full data
@@ -305,181 +536,6 @@ export default function AdminClients() {
     return [];
   };
 
-  // ---- Robust download function (force download to user's Downloads folder) ----
-  const downloadFile = async (url, filename) => {
-    try {
-      toast.info("Téléchargement en cours...");
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
-        }
-      });
-      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-      
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename || 'document.pdf';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-      toast.success("Téléchargement terminé");
-    } catch (error) {
-      console.error('Download error:', error);
-      toast.error("Erreur lors du téléchargement");
-    }
-  };
-
-  // ---- PDF detection ----
-  const isPdfFile = (url) => {
-    if (!url) return false;
-    const lower = url.toLowerCase();
-    if (lower.startsWith('data:application/pdf')) return true;
-    if (lower.endsWith('.pdf')) return true;
-    return false;
-  };
-
-  // ---- Render document preview in details view (PRIVATE) ----
-  const renderDocumentPreview = (url, label) => {
-    if (!url) return null;
-    const [blobUrl, setBlobUrl] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [isPdf, setIsPdf] = useState(false);
-
-    useEffect(() => {
-      const fetchDoc = async () => {
-        const result = await fetchPrivateDocument(url);
-        setBlobUrl(result);
-        setLoading(false);
-      };
-      fetchDoc();
-      setIsPdf(isPdfFile(url));
-      return () => {
-        if (blobUrl) URL.revokeObjectURL(blobUrl);
-      };
-    }, [url]);
-
-    if (loading) return <div className="document-card">Chargement...</div>;
-    if (!blobUrl) return <div className="document-card">Impossible de charger le document</div>;
-
-    const filename = url.split('/').pop() || `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
-
-    if (isPdf) {
-      return (
-        <div className="document-card pdf-card">
-          <div className="pdf-icon-wrapper">
-            <FileText size={48} className="pdf-icon" />
-          </div>
-          <div className="pdf-actions">
-            <a 
-              href={blobUrl} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="pdf-action-btn view"
-            >
-              <ExternalLink size={14} /> Voir PDF
-            </a>
-            <button
-              onClick={() => downloadFile(url, filename)}
-              className="pdf-action-btn download"
-            >
-              <Download size={14} /> Télécharger
-            </button>
-          </div>
-          <span className="document-label">{label}</span>
-        </div>
-      );
-    }
-
-    return (
-      <div className="document-card">
-        <img src={blobUrl} alt={label} className="document-image" />
-        <span className="document-label">{label}</span>
-      </div>
-    );
-  };
-
-  // ---- Render document preview in form (handles base64 and protected URLs) ----
-  const renderFormDocumentPreview = (data, label, onRemove) => {
-    if (!data) return null;
-    const [displayUrl, setDisplayUrl] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const isBase64 = data.startsWith('data:');
-
-    useEffect(() => {
-      const load = async () => {
-        if (isBase64) {
-          setDisplayUrl(data);
-          setLoading(false);
-        } else {
-          const blob = await fetchPrivateDocument(data);
-          setDisplayUrl(blob);
-          setLoading(false);
-        }
-      };
-      load();
-      return () => {
-        if (!isBase64 && displayUrl) URL.revokeObjectURL(displayUrl);
-      };
-    }, [data, isBase64]);
-
-    if (loading) return <div className="image-preview-container">Chargement...</div>;
-    if (!displayUrl) return <div className="image-preview-container">Impossible de charger</div>;
-
-    const isPdf = isPdfFile(data);
-    const filename = `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
-
-    if (isPdf) {
-      return (
-        <div className="image-preview-container pdf-preview-container">
-          <div className="pdf-icon-wrapper">
-            <FileText size={40} className="pdf-icon" />
-          </div>
-          <div className="pdf-actions small">
-            <a 
-              href={displayUrl} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="pdf-action-btn view"
-            >
-              <ExternalLink size={12} /> Voir
-            </a>
-            <button
-              onClick={() => downloadFile(data, filename)}
-              className="pdf-action-btn download"
-            >
-              <Download size={12} /> Télécharger
-            </button>
-          </div>
-          <button 
-            type="button" 
-            className="remove-image-btn"
-            onClick={onRemove}
-          >
-            <X size={14} /> Supprimer
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="image-preview-container">
-        <img src={displayUrl} alt={label} className="image-preview" />
-        <button 
-          type="button" 
-          className="remove-image-btn"
-          onClick={onRemove}
-        >
-          <X size={14} /> Supprimer
-        </button>
-      </div>
-    );
-  };
-
   // ---- Form handlers ----
   const handleCreateClient = async (data) => {
     setSubmitting(true);
@@ -534,7 +590,6 @@ export default function AdminClients() {
       cin_delivre_le: formatDateForInput(client.cin_delivre_le),
       permis_delivre_le: formatDateForInput(client.permis_delivre_le)
     });
-    // Set previews – these are now protected URLs, fetch them via the hook
     setCinPreview(client.cin_image_url || '');
     setLicensePreview(client.driver_license_image_url || '');
     setShowClientForm(true);
@@ -699,13 +754,17 @@ export default function AdminClients() {
                 </div>
               </div>
 
-              {/* Document Images - now using private preview */}
+              {/* Document Images - now using DocumentPreview component */}
               {(selectedClient.cin_image_url || selectedClient.driver_license_image_url) && (
                 <div className="client-documents">
                   <h4>Documents scannés</h4>
                   <div className="documents-grid">
-                    {selectedClient.cin_image_url && renderDocumentPreview(selectedClient.cin_image_url, "CIN")}
-                    {selectedClient.driver_license_image_url && renderDocumentPreview(selectedClient.driver_license_image_url, "Permis de conduire")}
+                    {selectedClient.cin_image_url && (
+                      <DocumentPreview url={selectedClient.cin_image_url} label="CIN" />
+                    )}
+                    {selectedClient.driver_license_image_url && (
+                      <DocumentPreview url={selectedClient.driver_license_image_url} label="Permis de conduire" />
+                    )}
                   </div>
                 </div>
               )}
@@ -1112,10 +1171,12 @@ export default function AdminClients() {
                         <p style={{ fontSize: '0.7rem', color: '#64748b' }}>JPG, PNG, PDF - 5MB max</p>
                         <input type="file" id="cinInput" accept="image/*,application/pdf" onChange={(e) => handleFileChange('cin_image', e.target.files[0])} style={{ display: 'none' }} />
                       </div>
-                      {cinPreview && renderFormDocumentPreview(
-                        cinPreview,
-                        "CIN",
-                        () => { setCinPreview(''); setFormData({...formData, cin_image: ''}); }
+                      {cinPreview && (
+                        <FormDocumentPreview
+                          data={cinPreview}
+                          label="CIN"
+                          onRemove={() => { setCinPreview(''); setFormData({...formData, cin_image: ''}); }}
+                        />
                       )}
                     </div>
                     <div className="inline-field">
@@ -1126,10 +1187,12 @@ export default function AdminClients() {
                         <p style={{ fontSize: '0.7rem', color: '#64748b' }}>JPG, PNG, PDF - 5MB max</p>
                         <input type="file" id="licenseInput" accept="image/*,application/pdf" onChange={(e) => handleFileChange('driver_license_image', e.target.files[0])} style={{ display: 'none' }} />
                       </div>
-                      {licensePreview && renderFormDocumentPreview(
-                        licensePreview,
-                        "Permis",
-                        () => { setLicensePreview(''); setFormData({...formData, driver_license_image: ''}); }
+                      {licensePreview && (
+                        <FormDocumentPreview
+                          data={licensePreview}
+                          label="Permis"
+                          onRemove={() => { setLicensePreview(''); setFormData({...formData, driver_license_image: ''}); }}
+                        />
                       )}
                     </div>
                   </div>
