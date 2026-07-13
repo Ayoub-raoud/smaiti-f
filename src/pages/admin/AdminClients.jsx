@@ -1,10 +1,16 @@
 // src/pages/admin/AdminClients.jsx
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchClients, createClient, updateClient, deleteClient, selectClients, selectClientsLoading, fetchReservations, selectReservations, fetchAccidents, selectAccidents, selectCars, selectMatricules } from "../../Redux/store";
+import {
+  fetchClients, createClient, updateClient, deleteClient,
+  selectClients, selectClientsLoading, fetchReservations,
+  selectReservations, fetchAccidents, selectAccidents,
+  selectCars, selectMatricules,
+  api  // <-- import the axios instance from store
+} from "../../Redux/store";
 import { toast } from "sonner";
-import { 
-  Plus, Edit2, Trash2, X, Search, RefreshCw, User, Phone, Mail, 
+import {
+  Plus, Edit2, Trash2, X, Search, RefreshCw, User, Phone, Mail,
   IdCard, MapPin, Calendar, FileText, CreditCard, Save, TrashIcon,
   Users, Building2, UserCheck, Camera, Upload, AlertTriangle,
   ChevronLeft, ChevronRight, Gift, Star, Clock, Shield, Eye,
@@ -24,7 +30,7 @@ export default function AdminClients() {
   const accidents = useSelector(selectAccidents);
   const cars = useSelector(selectCars);
   const matricules = useSelector(selectMatricules);
-  
+
   const [showClientForm, setShowClientForm] = useState(false);
   const [showClientDetails, setShowClientDetails] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -38,13 +44,13 @@ export default function AdminClients() {
   const [licensePreview, setLicensePreview] = useState('');
   const [activeTab, setActiveTab] = useState('reservations');
   const [dataLoaded, setDataLoaded] = useState(false);
-  
+
   // Sorting state
   const [sortField, setSortField] = useState("id");
   const [sortDirection, setSortDirection] = useState("desc");
-  
+
   const itemsPerPage = 10;
-  
+
   const [formData, setFormData] = useState({
     nom: "",
     prenom: "",
@@ -74,7 +80,7 @@ export default function AdminClients() {
   };
 
   // Load all data on mount
-  useEffect(() => { 
+  useEffect(() => {
     const loadData = async () => {
       await Promise.all([
         dispatch(fetchClients()),
@@ -157,7 +163,7 @@ export default function AdminClients() {
   // Calculate client statistics
   const getClientStats = (clientId) => {
     const clientReservations = getClientReservations(clientId);
-    
+
     const totalSpent = clientReservations.reduce((sum, r) => sum + (Number(r.total_price) || 0), 0);
     const totalPaid = clientReservations.reduce((sum, r) => sum + (Number(r.amount_paid) || 0), 0);
     const totalRemaining = clientReservations.reduce((sum, r) => sum + (Number(r.remaining_amount) || 0), 0);
@@ -165,7 +171,7 @@ export default function AdminClients() {
     const completedReservations = clientReservations.filter(r => r.status === 'completed').length;
     const cancelledReservations = clientReservations.filter(r => r.status === 'cancelled').length;
     const accidentCount = getClientAccidents(clientId).length;
-    
+
     return {
       totalSpent,
       totalPaid,
@@ -179,8 +185,8 @@ export default function AdminClients() {
   };
 
   // Filter and sort clients
-  const filteredClients = clients && Array.isArray(clients) ? clients.filter(c => 
-    searchTerm === '' || 
+  const filteredClients = clients && Array.isArray(clients) ? clients.filter(c =>
+    searchTerm === '' ||
     `${c.prenom} ${c.nom}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.telephone?.includes(searchTerm) ||
@@ -286,34 +292,50 @@ export default function AdminClients() {
     return [];
   };
 
-  // ---- Robust download function (force download to user's Downloads folder) ----
+  // ---- Robust download function using the API instance ----
   const downloadFile = async (url, filename) => {
     try {
       toast.info("Téléchargement en cours...");
-      const response = await fetch(url, {
-        headers: {
-          // Optional: add auth token if needed
-          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
-        }
-      });
-      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-      
-      const blob = await response.blob();
+
+      let blob;
+
+      // If it's a data URL (base64), fetch directly
+      if (url.startsWith('data:')) {
+        const response = await fetch(url);
+        blob = await response.blob();
+      } else {
+        // Use the configured API instance to handle authentication and CORS
+        const response = await api.get(url, { responseType: 'blob' });
+        blob = response.data;
+      }
+
+      // Create a download link
       const blobUrl = URL.createObjectURL(blob);
-      
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = filename || 'document.pdf';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      // Revoke the blob URL after a short delay
+
+      // Clean up the blob URL after a short delay
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
       toast.success("Téléchargement terminé");
     } catch (error) {
       console.error('Download error:', error);
-      toast.error("Erreur lors du téléchargement");
+      // Fallback: open in a new tab with download attribute
+      try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename || 'document.pdf';
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("Téléchargement lancé (fallback)");
+      } catch (fallbackError) {
+        toast.error("Erreur lors du téléchargement. Veuillez essayer de cliquer droit et 'Enregistrer sous'.");
+      }
     }
   };
 
@@ -343,9 +365,9 @@ export default function AdminClients() {
             <FileText size={48} className="pdf-icon" />
           </div>
           <div className="pdf-actions">
-            <a 
-              href={fullUrl} 
-              target="_blank" 
+            <a
+              href={fullUrl}
+              target="_blank"
               rel="noopener noreferrer"
               className="pdf-action-btn view"
             >
@@ -386,9 +408,9 @@ export default function AdminClients() {
             <FileText size={40} className="pdf-icon" />
           </div>
           <div className="pdf-actions small">
-            <a 
-              href={dataUrl} 
-              target="_blank" 
+            <a
+              href={dataUrl}
+              target="_blank"
               rel="noopener noreferrer"
               className="pdf-action-btn view"
             >
@@ -401,8 +423,8 @@ export default function AdminClients() {
               <Download size={12} /> Télécharger
             </button>
           </div>
-          <button 
-            type="button" 
+          <button
+            type="button"
             className="remove-image-btn"
             onClick={onRemove}
           >
@@ -416,8 +438,8 @@ export default function AdminClients() {
     return (
       <div className="image-preview-container">
         <img src={dataUrl} alt={label} className="image-preview" />
-        <button 
-          type="button" 
+        <button
+          type="button"
           className="remove-image-btn"
           onClick={onRemove}
         >
@@ -520,8 +542,8 @@ export default function AdminClients() {
     if (!clientToDelete) return;
     const result = await dispatch(deleteClient(clientToDelete.id));
     if (result.error) toast.error(result.payload);
-    else { 
-      toast.success("Client supprimé avec succès"); 
+    else {
+      toast.success("Client supprimé avec succès");
       await dispatch(fetchClients(true));
     }
     setDeleteModalOpen(false);
@@ -534,38 +556,42 @@ export default function AdminClients() {
     setActiveTab('reservations');
   };
 
-  const refreshData = async () => { 
+  const refreshData = async () => {
     await Promise.all([
       dispatch(fetchClients(true)),
       dispatch(fetchReservations(true)),
       dispatch(fetchAccidents(true))
     ]);
-    toast.success("Données actualisées"); 
+    toast.success("Données actualisées");
   };
 
   const handleExport = () => {
     const headers = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Email', 'Ville', 'CIN', 'Permis', 'Date naissance', 'Lieu naissance'];
     const csvData = filteredClients.map(c => [
-      c.id, 
-      `"${c.nom}"`, 
-      `"${c.prenom}"`, 
-      c.telephone, 
-      c.email || '', 
-      c.city || '', 
-      c.cin_number || '', 
+      c.id,
+      `"${c.nom}"`,
+      `"${c.prenom}"`,
+      c.telephone,
+      c.email || '',
+      c.city || '',
+      c.cin_number || '',
       c.driver_license_number || '',
       c.date_naissance || '',
       c.lieu_naissance || ''
     ].join(','));
     const blob = new Blob([headers.join(',') + '\n' + csvData.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `clients_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clients_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
     toast.success("Export CSV effectué");
   };
 
-  const stats = { 
-    total: clients?.length || 0, 
-    withCin: clients?.filter(c => c.cin_number).length || 0, 
+  const stats = {
+    total: clients?.length || 0,
+    withCin: clients?.filter(c => c.cin_number).length || 0,
     withLicense: clients?.filter(c => c.driver_license_number).length || 0,
     withEmail: clients?.filter(c => c.email).length || 0,
   };
@@ -920,54 +946,54 @@ export default function AdminClients() {
                   <div className="inline-grid-2">
                     <div className="inline-field">
                       <label>Nom *</label>
-                      <input 
-                        type="text" 
-                        className="inline-input" 
-                        value={formData.nom} 
-                        onChange={(e) => setFormData({...formData, nom: e.target.value})} 
-                        required 
+                      <input
+                        type="text"
+                        className="inline-input"
+                        value={formData.nom}
+                        onChange={(e) => setFormData({...formData, nom: e.target.value})}
+                        required
                         placeholder="Dupont"
                       />
                     </div>
                     <div className="inline-field">
                       <label>Prénom *</label>
-                      <input 
-                        type="text" 
-                        className="inline-input" 
-                        value={formData.prenom} 
-                        onChange={(e) => setFormData({...formData, prenom: e.target.value})} 
-                        required 
+                      <input
+                        type="text"
+                        className="inline-input"
+                        value={formData.prenom}
+                        onChange={(e) => setFormData({...formData, prenom: e.target.value})}
+                        required
                         placeholder="Jean"
                       />
                     </div>
                     <div className="inline-field">
                       <label>Téléphone *</label>
-                      <input 
-                        type="tel" 
-                        className="inline-input" 
-                        value={formData.telephone} 
-                        onChange={(e) => setFormData({...formData, telephone: e.target.value})} 
-                        required 
+                      <input
+                        type="tel"
+                        className="inline-input"
+                        value={formData.telephone}
+                        onChange={(e) => setFormData({...formData, telephone: e.target.value})}
+                        required
                         placeholder="06 12 34 56 78"
                       />
                     </div>
                     <div className="inline-field">
                       <label>Email</label>
-                      <input 
-                        type="email" 
-                        className="inline-input" 
-                        value={formData.email} 
-                        onChange={(e) => setFormData({...formData, email: e.target.value})} 
+                      <input
+                        type="email"
+                        className="inline-input"
+                        value={formData.email}
+                        onChange={(e) => setFormData({...formData, email: e.target.value})}
                         placeholder="client@email.com"
                       />
                     </div>
                     <div className="inline-field">
                       <label>Ville</label>
-                      <input 
-                        type="text" 
-                        className="inline-input" 
-                        value={formData.city} 
-                        onChange={(e) => setFormData({...formData, city: e.target.value})} 
+                      <input
+                        type="text"
+                        className="inline-input"
+                        value={formData.city}
+                        onChange={(e) => setFormData({...formData, city: e.target.value})}
                         placeholder="Casablanca"
                       />
                     </div>
@@ -982,59 +1008,59 @@ export default function AdminClients() {
                   <div className="inline-grid-2">
                     <div className="inline-field">
                       <label>Numéro CIN</label>
-                      <input 
-                        type="text" 
-                        className="inline-input" 
-                        value={formData.cin_number} 
-                        onChange={(e) => setFormData({...formData, cin_number: e.target.value.toUpperCase()})} 
+                      <input
+                        type="text"
+                        className="inline-input"
+                        value={formData.cin_number}
+                        onChange={(e) => setFormData({...formData, cin_number: e.target.value.toUpperCase()})}
                         placeholder="AB123456"
                       />
                     </div>
                     <div className="inline-field">
                       <label>Numéro Permis</label>
-                      <input 
-                        type="text" 
-                        className="inline-input" 
-                        value={formData.driver_license_number} 
-                        onChange={(e) => setFormData({...formData, driver_license_number: e.target.value.toUpperCase()})} 
+                      <input
+                        type="text"
+                        className="inline-input"
+                        value={formData.driver_license_number}
+                        onChange={(e) => setFormData({...formData, driver_license_number: e.target.value.toUpperCase()})}
                         placeholder="P123456"
                       />
                     </div>
                     <div className="inline-field">
                       <label>Date naissance</label>
-                      <input 
-                        type="date" 
-                        className="inline-input" 
-                        value={formData.date_naissance} 
-                        onChange={(e) => setFormData({...formData, date_naissance: e.target.value})} 
+                      <input
+                        type="date"
+                        className="inline-input"
+                        value={formData.date_naissance}
+                        onChange={(e) => setFormData({...formData, date_naissance: e.target.value})}
                       />
                     </div>
                     <div className="inline-field">
                       <label>Lieu naissance</label>
-                      <input 
-                        type="text" 
-                        className="inline-input" 
-                        value={formData.lieu_naissance} 
-                        onChange={(e) => setFormData({...formData, lieu_naissance: e.target.value})} 
+                      <input
+                        type="text"
+                        className="inline-input"
+                        value={formData.lieu_naissance}
+                        onChange={(e) => setFormData({...formData, lieu_naissance: e.target.value})}
                         placeholder="Casablanca"
                       />
                     </div>
                     <div className="inline-field">
                       <label>CIN délivré le</label>
-                      <input 
-                        type="date" 
-                        className="inline-input" 
-                        value={formData.cin_delivre_le} 
-                        onChange={(e) => setFormData({...formData, cin_delivre_le: e.target.value})} 
+                      <input
+                        type="date"
+                        className="inline-input"
+                        value={formData.cin_delivre_le}
+                        onChange={(e) => setFormData({...formData, cin_delivre_le: e.target.value})}
                       />
                     </div>
                     <div className="inline-field">
                       <label>Permis délivré le</label>
-                      <input 
-                        type="date" 
-                        className="inline-input" 
-                        value={formData.permis_delivre_le} 
-                        onChange={(e) => setFormData({...formData, permis_delivre_le: e.target.value})} 
+                      <input
+                        type="date"
+                        className="inline-input"
+                        value={formData.permis_delivre_le}
+                        onChange={(e) => setFormData({...formData, permis_delivre_le: e.target.value})}
                       />
                     </div>
                   </div>
@@ -1177,12 +1203,12 @@ export default function AdminClients() {
           <div className="search-wrapper">
             <div className="search-container">
               <Search size={16} className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Rechercher par nom, prénom, email, téléphone, CIN..." 
-                value={searchTerm} 
-                onChange={(e) => setSearchTerm(e.target.value)} 
-                className="search-input" 
+              <input
+                type="text"
+                placeholder="Rechercher par nom, prénom, email, téléphone, CIN..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
               />
             </div>
           </div>
@@ -1272,17 +1298,17 @@ export default function AdminClients() {
                   <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1} className="page-btn">
                     <ChevronLeft size={16} />
                   </button>
-                  {[...Array(Math.min(totalPages,5))].map((_,i) => { 
-                    let p = i+1; 
-                    if(totalPages>5 && currentPage>3) { 
-                      p = currentPage-3+i; 
-                      if(p>totalPages) return null; 
-                    } 
+                  {[...Array(Math.min(totalPages,5))].map((_,i) => {
+                    let p = i+1;
+                    if(totalPages>5 && currentPage>3) {
+                      p = currentPage-3+i;
+                      if(p>totalPages) return null;
+                    }
                     return (
                       <button key={i} onClick={() => setCurrentPage(p)} className={`page-btn ${currentPage===p ? 'active' : ''}`}>
                         {p}
                       </button>
-                    ); 
+                    );
                   })}
                   <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="page-btn">
                     <ChevronRight size={16} />
