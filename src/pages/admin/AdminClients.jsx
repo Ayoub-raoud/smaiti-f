@@ -15,6 +15,7 @@ import {
   Download, ExternalLink
 } from "lucide-react";
 import { getImageUrl } from '../../utils/imageUtils';
+import axios from 'axios'; // needed for private document fetching
 
 export default function AdminClients() {
   const dispatch = useDispatch();
@@ -34,7 +35,7 @@ export default function AdminClients() {
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [cinPreview, setCinPreview] = useState('');
+  const [cinPreview, setCinPreview] = useState('');   // can be blob URL or base64
   const [licensePreview, setLicensePreview] = useState('');
   const [activeTab, setActiveTab] = useState('reservations');
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -70,6 +71,24 @@ export default function AdminClients() {
       return date.toISOString().slice(0, 10);
     } catch {
       return "";
+    }
+  };
+
+  // ---------- PRIVATE DOCUMENT FETCHER (for preview) ----------
+  const fetchPrivateDocument = async (url) => {
+    if (!url) return null;
+    try {
+      const response = await axios.get(url, {
+        responseType: 'blob',
+        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        },
+      });
+      return URL.createObjectURL(response.data);
+    } catch (error) {
+      console.error('Failed to fetch private document:', error);
+      return null;
     }
   };
 
@@ -292,7 +311,6 @@ export default function AdminClients() {
       toast.info("Téléchargement en cours...");
       const response = await fetch(url, {
         headers: {
-          // Optional: add auth token if needed
           'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
         }
       });
@@ -308,7 +326,6 @@ export default function AdminClients() {
       link.click();
       document.body.removeChild(link);
       
-      // Revoke the blob URL after a short delay
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
       toast.success("Téléchargement terminé");
     } catch (error) {
@@ -326,15 +343,30 @@ export default function AdminClients() {
     return false;
   };
 
-  // ---- Render document preview in details view ----
+  // ---- Render document preview in details view (PRIVATE) ----
   const renderDocumentPreview = (url, label) => {
     if (!url) return null;
-    const fullUrl = getImageUrl(url);
-    if (!fullUrl) return null;
+    const [blobUrl, setBlobUrl] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [isPdf, setIsPdf] = useState(false);
 
-    const isPdf = isPdfFile(fullUrl);
-    // Generate a clean filename from URL
-    const filename = fullUrl.split('/').pop() || `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
+    useEffect(() => {
+      const fetchDoc = async () => {
+        const result = await fetchPrivateDocument(url);
+        setBlobUrl(result);
+        setLoading(false);
+      };
+      fetchDoc();
+      setIsPdf(isPdfFile(url));
+      return () => {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+      };
+    }, [url]);
+
+    if (loading) return <div className="document-card">Chargement...</div>;
+    if (!blobUrl) return <div className="document-card">Impossible de charger le document</div>;
+
+    const filename = url.split('/').pop() || `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
 
     if (isPdf) {
       return (
@@ -344,7 +376,7 @@ export default function AdminClients() {
           </div>
           <div className="pdf-actions">
             <a 
-              href={fullUrl} 
+              href={blobUrl} 
               target="_blank" 
               rel="noopener noreferrer"
               className="pdf-action-btn view"
@@ -352,7 +384,7 @@ export default function AdminClients() {
               <ExternalLink size={14} /> Voir PDF
             </a>
             <button
-              onClick={() => downloadFile(fullUrl, filename)}
+              onClick={() => downloadFile(url, filename)}
               className="pdf-action-btn download"
             >
               <Download size={14} /> Télécharger
@@ -363,20 +395,42 @@ export default function AdminClients() {
       );
     }
 
-    // Image fallback
     return (
       <div className="document-card">
-        <img src={fullUrl} alt={label} className="document-image" />
+        <img src={blobUrl} alt={label} className="document-image" />
         <span className="document-label">{label}</span>
       </div>
     );
   };
 
-  // ---- Render preview in form (for base64 data URLs) ----
-  const renderFormDocumentPreview = (dataUrl, label, onRemove) => {
-    if (!dataUrl) return null;
+  // ---- Render document preview in form (handles base64 and protected URLs) ----
+  const renderFormDocumentPreview = (data, label, onRemove) => {
+    if (!data) return null;
+    const [displayUrl, setDisplayUrl] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const isBase64 = data.startsWith('data:');
 
-    const isPdf = isPdfFile(dataUrl);
+    useEffect(() => {
+      const load = async () => {
+        if (isBase64) {
+          setDisplayUrl(data);
+          setLoading(false);
+        } else {
+          const blob = await fetchPrivateDocument(data);
+          setDisplayUrl(blob);
+          setLoading(false);
+        }
+      };
+      load();
+      return () => {
+        if (!isBase64 && displayUrl) URL.revokeObjectURL(displayUrl);
+      };
+    }, [data, isBase64]);
+
+    if (loading) return <div className="image-preview-container">Chargement...</div>;
+    if (!displayUrl) return <div className="image-preview-container">Impossible de charger</div>;
+
+    const isPdf = isPdfFile(data);
     const filename = `${label.toLowerCase().replace(/\s/g, '_')}.pdf`;
 
     if (isPdf) {
@@ -387,7 +441,7 @@ export default function AdminClients() {
           </div>
           <div className="pdf-actions small">
             <a 
-              href={dataUrl} 
+              href={displayUrl} 
               target="_blank" 
               rel="noopener noreferrer"
               className="pdf-action-btn view"
@@ -395,7 +449,7 @@ export default function AdminClients() {
               <ExternalLink size={12} /> Voir
             </a>
             <button
-              onClick={() => downloadFile(dataUrl, filename)}
+              onClick={() => downloadFile(data, filename)}
               className="pdf-action-btn download"
             >
               <Download size={12} /> Télécharger
@@ -412,10 +466,9 @@ export default function AdminClients() {
       );
     }
 
-    // Image preview
     return (
       <div className="image-preview-container">
-        <img src={dataUrl} alt={label} className="image-preview" />
+        <img src={displayUrl} alt={label} className="image-preview" />
         <button 
           type="button" 
           className="remove-image-btn"
@@ -427,6 +480,7 @@ export default function AdminClients() {
     );
   };
 
+  // ---- Form handlers ----
   const handleCreateClient = async (data) => {
     setSubmitting(true);
     try {
@@ -480,6 +534,7 @@ export default function AdminClients() {
       cin_delivre_le: formatDateForInput(client.cin_delivre_le),
       permis_delivre_le: formatDateForInput(client.permis_delivre_le)
     });
+    // Set previews – these are now protected URLs, fetch them via the hook
     setCinPreview(client.cin_image_url || '');
     setLicensePreview(client.driver_license_image_url || '');
     setShowClientForm(true);
@@ -644,7 +699,7 @@ export default function AdminClients() {
                 </div>
               </div>
 
-              {/* Document Images - now with PDF support */}
+              {/* Document Images - now using private preview */}
               {(selectedClient.cin_image_url || selectedClient.driver_license_image_url) && (
                 <div className="client-documents">
                   <h4>Documents scannés</h4>
@@ -816,7 +871,7 @@ export default function AdminClients() {
                 </div>
               )}
 
-              {/* Payments Tab - FIXED */}
+              {/* Payments Tab */}
               {activeTab === 'payments' && (
                 <div>
                   {getClientReservations(selectedClient.id).filter(r => getPaymentHistoryArray(r).length > 0 || (r.amount_paid || 0) > 0).length === 0 ? (
