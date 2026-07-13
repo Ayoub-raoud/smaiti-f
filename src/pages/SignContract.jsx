@@ -5,7 +5,7 @@ import { api } from '../Redux/store';   // adjust path if your store is elsewher
 import { toast } from 'sonner';
 import { Check, PenTool, X, Sparkles, CircleCheck } from 'lucide-react';
 // ✅ Logo import
-import logoImage from "../../assets/logo1.png";
+import logoImage from "../assets/logo1.png";
 
 export default function SignContract() {
   // ✅ Use 'token' from URL
