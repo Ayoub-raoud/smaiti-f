@@ -27,11 +27,10 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import checklistImage from "../../assets/checklist.png";
 import logoImage from "../../assets/logo.png";
-import agentSignatureImage from "../../assets/cache.png"; // <-- NOUVEAU
+import agentSignatureImage from "../../assets/cache.png";
 
 // ==================== ContractDisplayOptions ====================
 const ContractDisplayOptions = ({ options, onOptionChange, onResetAll }) => {
-  // ... (inchangé, identique à l'original)
   const sections = [
     { id: "prices", label: "Prix et Montants", icon: DollarSign },
     { id: "clientInfo", label: "Informations du Locataire", icon: User },
@@ -148,8 +147,14 @@ const SignatureBlock = ({ label, signature = "", option }) => {
 };
 
 // ==================== ContractLocation ====================
-const ContractLocation = ({ reservation, showSignatures = false, currentUser, displayOptions = {}, clients = [] }) => {
-  // ... (inchangé, identique à l'original)
+const ContractLocation = ({
+  reservation,
+  showSignatures = false,
+  currentUser,
+  displayOptions = {},
+  clients = [],
+  containerId = "contract-print"   // ← NEW: unique ID
+}) => {
   const storedSignatures = reservation?.signatures || { agent: "", locataire: "", secondConducteur: "" };
   const [signatures, setSignatures] = useState(storedSignatures);
 
@@ -257,7 +262,7 @@ const ContractLocation = ({ reservation, showSignatures = false, currentUser, di
   const locataireSignature = signatures.locataire_image || signatures.locataire || '';
 
   return (
-    <div className="contract-container-print" id="contract-print">
+    <div className="contract-container-print" id={containerId}>   {/* ← use containerId */}
       {/* Header */}
       <table className="contract-header-table" cellPadding="0" cellSpacing="0">
         <tbody>
@@ -566,7 +571,6 @@ const ContractLocation = ({ reservation, showSignatures = false, currentUser, di
 
 // ==================== SecondDriverSearch ====================
 const SecondDriverSearch = ({ clients, selectedClientId, selectedSecondDriverId, onSelect, onCreateNew }) => {
-  // ... (inchangé, identique à l'original)
   const [searchTerm, setSearchTerm] = useState("");
   const [isNewDriver, setIsNewDriver] = useState(false);
   const dispatch = useDispatch();
@@ -724,7 +728,6 @@ const SecondDriverSearch = ({ clients, selectedClientId, selectedSecondDriverId,
 const ReservationForm = ({
   isOpen, onClose, onSubmit, editingReservation, clients, cars, matricules, submitting
 }) => {
-  // ... (inchangé, identique à l'original)
   const dispatch = useDispatch();
   const [formData, setFormData] = useState({
     start_date: new Date().toISOString().split("T")[0],
@@ -1307,7 +1310,6 @@ const ReservationForm = ({
 
 // ==================== ContractViewPage ====================
 const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
-  // ... (inchangé sauf l'ajout du modal d'options d'impression)
   const [contractSignatures, setContractSignatures] = useState({
     agent: reservation?.signatures?.agent || "",
     locataire: reservation?.signatures?.locataire || "",
@@ -1368,11 +1370,11 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
       const pageWidth = doc.internal.pageSize.getWidth();
-      const contractElement = document.getElementById("contract-print");
+      // Utiliser l'ID unique du contrat de la vue
+      const contractElement = document.getElementById("contract-print-view");
       if (!contractElement) throw new Error("Contract element not found");
       const contractClone = contractElement.cloneNode(true);
 
-      // ---- Insertion de la signature de l'agent si demandée ----
       if (includeSignatures) {
         const signatureBlocks = contractClone.querySelectorAll('.signature-block');
         if (signatureBlocks.length >= 1) {
@@ -1493,6 +1495,7 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
           currentUser={currentUser}
           clients={clients}
           displayOptions={contractDisplayOptions}
+          containerId="contract-print-view"   // ← unique ID pour la vue
         />
       </div>
 
@@ -1828,7 +1831,7 @@ export default function AdminReservations() {
     window.open(whatsappUrl, '_blank');
   };
 
-  // ----- Signature Link handler (copies link to clipboard) -----
+  // ----- Signature Link handler -----
   const handleSignatureLink = async (reservation) => {
     if (reservation.status !== 'confirmed') {
         toast.warning("Seules les réservations confirmées peuvent avoir un lien de signature.");
@@ -1972,16 +1975,15 @@ export default function AdminReservations() {
     return `${diffDays} jours restants`;
   };
 
-  // ----- Gestion de l'impression avec popup -----
+  // ===== Gestion de l'impression avec popup =====
   const handlePrintClick = (reservation) => {
-    setSelectedContractReservation(reservation); // met à jour l'élément caché
+    setSelectedContractReservation(reservation);
     setPrintReservation(reservation);
     setShowPrintOptions(true);
   };
 
   const handlePrintConfirm = (withSignature) => {
     setShowPrintOptions(false);
-    // Laisser le temps au DOM de se mettre à jour
     setTimeout(() => {
       generateContractPDF(printReservation, withSignature);
       setPrintReservation(null);
@@ -1993,7 +1995,8 @@ export default function AdminReservations() {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
       const pageWidth = doc.internal.pageSize.getWidth();
-      const contractElement = document.getElementById("contract-print");
+      // Utiliser l'ID du contrat caché utilisé pour le PDF depuis la liste
+      const contractElement = document.getElementById("contract-print-hidden");
       if (!contractElement) {
         console.error("Contract element not found");
         toast.error("Erreur: Élément du contrat non trouvé", { id: "contract-pdf" });
@@ -2001,7 +2004,6 @@ export default function AdminReservations() {
       }
       const contractClone = contractElement.cloneNode(true);
 
-      // ---- Insertion de la signature de l'agent si demandée ----
       if (includeSignatures) {
         const signatureBlocks = contractClone.querySelectorAll('.signature-block');
         if (signatureBlocks.length >= 1) {
@@ -2272,6 +2274,7 @@ export default function AdminReservations() {
             currentUser={currentUser}
             clients={clients}
             displayOptions={contractDisplayOptions}
+            containerId="contract-print-hidden"   // ← unique ID pour le PDF depuis la liste
           />
         </div>
       )}
@@ -2416,7 +2419,6 @@ export default function AdminReservations() {
                                 <Link2 size={16} />
                               </button>
                               <button onClick={() => handleViewContract(r)} className="action-btn action-btn-info" title="Voir contrat"><FileText size={16} /></button>
-                              {/* Bouton Imprimer avec popup */}
                               <button onClick={() => handlePrintClick(r)} className="action-btn action-btn-print" title="Imprimer"><Printer size={16} /></button>
                               <button onClick={() => handleWhatsApp(r)} className="action-btn action-btn-whatsapp" title="Envoyer un message WhatsApp"><MessageCircle size={16} /></button>
                               <button onClick={() => handleEdit(r)} className="action-btn action-btn-edit" title="Modifier"><Edit size={16} /></button>
@@ -2730,6 +2732,116 @@ export default function AdminReservations() {
         @media (max-width: 640px) { .inline-grid-2 { grid-template-columns: 1fr; min-width: auto; } .stats-grid { grid-template-columns: repeat(2, 1fr); overflow-x: auto; } .action-buttons { flex-wrap: wrap; justify-content: flex-start; } .modal { max-width: 95%; margin: 0 auto; } }
         @media screen and (min-resolution: 120dpi) { .admin-container, .inline-form-container, .inline-details-container { padding: 0.75rem; } .inline-form { padding: 1rem; } .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); } .cards-grid { grid-template-columns: 1fr; } }
         * { max-width: 100%; box-sizing: border-box; }
+
+        /* ===== Styles for Display Options Panel ===== */
+        .display-options-panel {
+          background: white;
+          border-radius: 12px;
+          padding: 1.5rem;
+          margin-bottom: 1.5rem;
+          border: 1px solid #e2e8f0;
+        }
+        .display-options-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+        .display-options-header h3 {
+          font-size: 0.95rem;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin: 0;
+        }
+        .reset-all-btn {
+          background: none;
+          border: 1px solid #e2e8f0;
+          padding: 0.3rem 0.8rem;
+          border-radius: 20px;
+          font-size: 0.7rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          transition: all 0.2s;
+        }
+        .reset-all-btn:hover {
+          background: #f1f5f9;
+        }
+        .display-options-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 0.75rem;
+        }
+        .display-option-item {
+          background: #f8fafc;
+          border-radius: 8px;
+          padding: 0.5rem 0.75rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .display-option-label {
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          font-size: 0.75rem;
+          font-weight: 500;
+        }
+        .display-option-buttons {
+          display: flex;
+          gap: 0.25rem;
+        }
+        .mode-btn {
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 4px;
+          padding: 0.2rem 0.4rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s;
+          color: #64748b;
+        }
+        .mode-btn.active {
+          background: #eab308;
+          border-color: #eab308;
+          color: #0f172a;
+        }
+        .mode-btn:hover {
+          background: #f1f5f9;
+        }
+        @media (prefers-color-scheme: dark) {
+          .display-options-panel {
+            background: #1e293b;
+            border-color: #334155;
+          }
+          .display-option-item {
+            background: #0f172a;
+            border-color: #475569;
+          }
+          .mode-btn {
+            background: #1e293b;
+            border-color: #475569;
+            color: #cbd5e1;
+          }
+          .mode-btn.active {
+            background: #eab308;
+            color: #0f172a;
+          }
+          .reset-all-btn {
+            border-color: #475569;
+            color: #cbd5e1;
+          }
+          .reset-all-btn:hover {
+            background: #334155;
+          }
+        }
       `}</style>
     </>
   );

@@ -2694,6 +2694,128 @@ export default function AdminReservationsStatus() {
         @media (max-width: 640px) { .inline-grid-2 { grid-template-columns: 1fr; min-width: auto; } .stats-grid { grid-template-columns: repeat(2, 1fr); overflow-x: auto; } .action-buttons { flex-wrap: wrap; justify-content: flex-start; } .modal { max-width: 95%; margin: 0 auto; } }
         @media screen and (min-resolution: 120dpi) { .admin-container, .inline-form-container, .inline-details-container { padding: 0.75rem; } .inline-form { padding: 1rem; } .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); } .cards-grid { grid-template-columns: 1fr; } }
         * { max-width: 100%; box-sizing: border-box; }
+        /* ===== Display Options Panel ===== */
+.display-options-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #e2e8f0;
+}
+
+.display-options-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.display-options-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.reset-all-btn {
+  background: none;
+  border: 1px solid #e2e8f0;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.2s;
+}
+
+.reset-all-btn:hover {
+  background: #f1f5f9;
+}
+
+.display-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.display-option-item {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.display-option-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.display-option-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.mode-btn {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  color: #64748b;
+}
+
+.mode-btn.active {
+  background: #eab308;
+  border-color: #eab308;
+  color: #0f172a;
+}
+
+.mode-btn:hover {
+  background: #f1f5f9;
+}
+
+/* Dark mode overrides (already present in your style block, but add these) */
+@media (prefers-color-scheme: dark) {
+  .display-options-panel {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  .display-option-item {
+    background: #0f172a;
+    border-color: #475569;
+  }
+  .mode-btn {
+    background: #1e293b;
+    border-color: #475569;
+    color: #cbd5e1;
+  }
+  .mode-btn.active {
+    background: #eab308;
+    color: #0f172a;
+  }
+  .reset-all-btn {
+    border-color: #475569;
+    color: #cbd5e1;
+  }
+  .reset-all-btn:hover {
+    background: #334155;
+  }
+}
       `}</style>
     </>
   );
