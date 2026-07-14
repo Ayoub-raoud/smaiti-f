@@ -153,7 +153,7 @@ const ContractLocation = ({
   currentUser,
   displayOptions = {},
   clients = [],
-  containerId = "contract-print"   // ← NEW: unique ID
+  containerId = "contract-print"
 }) => {
   const storedSignatures = reservation?.signatures || { agent: "", locataire: "", secondConducteur: "" };
   const [signatures, setSignatures] = useState(storedSignatures);
@@ -218,7 +218,7 @@ const ContractLocation = ({
     end.setHours(0, 0, 0, 0);
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays === 0 ? 1 : diffDays;
+    return diffDays === 0 ? 1 : diffDays; // exclusive (07/07->07/08 = 1)
   };
 
   const getDisplayOption = (section) => displayOptions[section] || "show";
@@ -262,7 +262,7 @@ const ContractLocation = ({
   const locataireSignature = signatures.locataire_image || signatures.locataire || '';
 
   return (
-    <div className="contract-container-print" id={containerId}>   {/* ← use containerId */}
+    <div className="contract-container-print" id={containerId}>
       {/* Header */}
       <table className="contract-header-table" cellPadding="0" cellSpacing="0">
         <tbody>
@@ -398,6 +398,10 @@ const ContractLocation = ({
                   <div className="field-row"><span className="field-label">Retour :</span><span className="field-value">{getDisplayValue(datesOption, `${formatDate(reservation?.end_date)} à ${reservation?.end_time || "18:00"}`)}</span></div>
                   <div className="field-row"><span className="field-label">Durée :</span><span className="field-value">{getDisplayValue(rentalDaysOption, `${calculateRentalDays()} jours`)}</span></div>
                   <div className="field-row"><span className="field-label">Km départ :</span><span className="field-value">{getDisplayValue(kilometrageOption, `${reservation?.kilometrage_sortie || "—"} km`)}</span></div>
+                  <div className="field-row">
+  <span className="field-label">Km retour :</span>
+  <span className="field-value">{getDisplayValue(kilometrageOption, reservation?.kilometrage_entree ? `${reservation.kilometrage_entree} km` : "—")}</span>
+</div>
                   <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, currentUserName)}</span></div>
                   <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, reservationCreatorName)}</span></div>
                 </div>
@@ -803,12 +807,27 @@ const ReservationForm = ({
 
   useEffect(() => {
     if (editingReservation) {
+      // Compute exclusive days: diff in days (07/07->07/08 = 1)
+      const computeRentalDays = (start, end) => {
+        if (!start || !end) return 1;
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        startDate.setHours(0,0,0,0);
+        endDate.setHours(0,0,0,0);
+        const diffTime = Math.abs(endDate - startDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays === 0 ? 1 : diffDays;
+      };
+
       setFormData({
         start_date: editingReservation.start_date?.split("T")[0] || "",
         end_date: editingReservation.end_date?.split("T")[0] || "",
         start_time: editingReservation.start_time || "08:00",
         end_time: editingReservation.end_time || "18:00",
-        rental_days: editingReservation.rental_days || editingReservation.total_days || 1,
+        rental_days: editingReservation.rental_days || editingReservation.total_days || 
+                     (editingReservation.start_date && editingReservation.end_date 
+                       ? computeRentalDays(editingReservation.start_date, editingReservation.end_date) 
+                       : 1),
         total_price: editingReservation.total_price || 0,
         amount_paid: editingReservation.amount_paid || 0,
         remaining_amount: editingReservation.remaining_amount || 0,
@@ -877,12 +896,13 @@ const ReservationForm = ({
     }
   }, [formData.car_id, formData.rental_days, formData.amount_paid, cars]);
 
+  // ---- Date/days handlers (exclusive) ----
   const handleStartDateChange = (value) => {
     setFormData(prev => ({ ...prev, start_date: value }));
     if (value && formData.rental_days) {
       const start = new Date(value);
       const end = new Date(start);
-      end.setDate(start.getDate() + formData.rental_days - 1);
+      end.setDate(start.getDate() + formData.rental_days); // e.g. 1 day -> next day
       setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
     }
   };
@@ -893,8 +913,8 @@ const ReservationForm = ({
       const start = new Date(formData.start_date);
       const end = new Date(value);
       const diffTime = Math.abs(end - start);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      setFormData(prev => ({ ...prev, rental_days: diffDays }));
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      setFormData(prev => ({ ...prev, rental_days: diffDays === 0 ? 1 : diffDays }));
     }
   };
 
@@ -904,7 +924,7 @@ const ReservationForm = ({
     if (formData.start_date) {
       const start = new Date(formData.start_date);
       const end = new Date(start);
-      end.setDate(start.getDate() + days - 1);
+      end.setDate(start.getDate() + days); // exclusive
       setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
     }
   };
@@ -1341,7 +1361,6 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   });
   const [showDisplayOptions, setShowDisplayOptions] = useState(false);
 
-  // États pour la popup d'impression
   const [showPrintOptions, setShowPrintOptions] = useState(false);
 
   const handleDisplayOptionChange = (section, value) => {
@@ -1370,7 +1389,6 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
       const pageWidth = doc.internal.pageSize.getWidth();
-      // Utiliser l'ID unique du contrat de la vue
       const contractElement = document.getElementById("contract-print-view");
       if (!contractElement) throw new Error("Contract element not found");
       const contractClone = contractElement.cloneNode(true);
@@ -1495,11 +1513,10 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
           currentUser={currentUser}
           clients={clients}
           displayOptions={contractDisplayOptions}
-          containerId="contract-print-view"   // ← unique ID pour la vue
+          containerId="contract-print-view"
         />
       </div>
 
-      {/* Modal options d'impression */}
       {showPrintOptions && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: '400px' }}>
@@ -1585,6 +1602,8 @@ export default function AdminReservations() {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeReservationId, setCompleteReservationId] = useState(null);
   const [kilometrageRetour, setKilometrageRetour] = useState('');
+  const [returnDate, setReturnDate] = useState('');
+  const [returnTime, setReturnTime] = useState('');
 
   // Nouveaux états pour la popup d'impression
   const [showPrintOptions, setShowPrintOptions] = useState(false);
@@ -1749,6 +1768,8 @@ export default function AdminReservations() {
   const openCompleteModal = (reservation) => {
     setCompleteReservationId(reservation.id);
     setKilometrageRetour(reservation.kilometrage_entree || reservation.matricule_kilometrage_at_start || '');
+    setReturnDate(reservation.end_date ? reservation.end_date.split('T')[0] : '');
+    setReturnTime(reservation.end_time || '18:00');
     setShowCompleteModal(true);
   };
 
@@ -1760,7 +1781,12 @@ export default function AdminReservations() {
     try {
       await dispatch(updateReservation({
         id: completeReservationId,
-        data: { status: 'completed', kilometrage_entree: parseFloat(kilometrageRetour) }
+        data: {
+          status: 'completed',
+          end_date: returnDate,
+          end_time: returnTime,
+          kilometrage_entree: parseFloat(kilometrageRetour)
+        }
       })).unwrap();
       toast.success("Réservation terminée avec succès !");
       await dispatch(fetchReservations(true));
@@ -1771,6 +1797,8 @@ export default function AdminReservations() {
     setShowCompleteModal(false);
     setCompleteReservationId(null);
     setKilometrageRetour('');
+    setReturnDate('');
+    setReturnTime('');
   };
 
   // ----- WhatsApp handler -----
@@ -1956,7 +1984,7 @@ export default function AdminReservations() {
     const end = new Date(endDate);
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays === 0 ? 1 : diffDays;
+    return diffDays === 0 ? 1 : diffDays; // exclusive
   };
 
   const calculateDaysRemaining = (reservation) => {
@@ -1995,7 +2023,6 @@ export default function AdminReservations() {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
       const pageWidth = doc.internal.pageSize.getWidth();
-      // Utiliser l'ID du contrat caché utilisé pour le PDF depuis la liste
       const contractElement = document.getElementById("contract-print-hidden");
       if (!contractElement) {
         console.error("Contract element not found");
@@ -2237,8 +2264,29 @@ export default function AdminReservations() {
           <button onClick={() => setShowCompleteModal(false)} className="modal-close"><X size={20} /></button>
         </div>
         <div className="modal-body" style={{ padding: '1.5rem' }}>
-          <p style={{ marginBottom: '1rem' }}>Entrez le kilométrage retour du véhicule :</p>
-          <div className="form-group">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
+              <label>Date de retour</label>
+              <input
+                type="date"
+                value={returnDate}
+                onChange={(e) => setReturnDate(e.target.value)}
+                className="inline-input"
+                style={{ width: '100%', padding: '0.75rem' }}
+              />
+            </div>
+            <div className="form-group">
+              <label>Heure de retour</label>
+              <input
+                type="time"
+                value={returnTime}
+                onChange={(e) => setReturnTime(e.target.value)}
+                className="inline-input"
+                style={{ width: '100%', padding: '0.75rem' }}
+              />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginTop: '1rem' }}>
             <label>Km retour</label>
             <input
               type="number"
@@ -2274,7 +2322,7 @@ export default function AdminReservations() {
             currentUser={currentUser}
             clients={clients}
             displayOptions={contractDisplayOptions}
-            containerId="contract-print-hidden"   // ← unique ID pour le PDF depuis la liste
+            containerId="contract-print-hidden"
           />
         </div>
       )}
@@ -2550,7 +2598,7 @@ export default function AdminReservations() {
 
       {/* ===== STYLES ===== */}
       <style>{`
-        /* All styles from previous version (unchanged) */
+        /* All styles from previous version */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif; background: #f8fafc; }
         .sortable-header { cursor: pointer; user-select: none; transition: background-color 0.2s; }
@@ -2733,7 +2781,7 @@ export default function AdminReservations() {
         @media screen and (min-resolution: 120dpi) { .admin-container, .inline-form-container, .inline-details-container { padding: 0.75rem; } .inline-form { padding: 1rem; } .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); } .cards-grid { grid-template-columns: 1fr; } }
         * { max-width: 100%; box-sizing: border-box; }
 
-        /* ===== Styles for Display Options Panel ===== */
+        /* Styles for Display Options Panel */
         .display-options-panel {
           background: white;
           border-radius: 12px;

@@ -7,7 +7,7 @@ import {
   selectCars, selectCarsLoading, selectReservations, selectReservationsLoading,
   selectClients, selectAccidents, selectMatricules, selectContacts, selectUtilisateurs, selectUser,
   createReservation, updateReservation, refreshMatricules,
-  addPaymentToReservation,removePaymentFromReservation
+  addPaymentToReservation, removePaymentFromReservation
 } from "../../Redux/store";
 import {
   Car, CalendarCheck, UserCircle, AlertTriangle, TrendingUp,
@@ -66,9 +66,11 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
   const paperRef = useRef(null);
   const pdfPaperRef = useRef(null);
 
-  // For client search dropdown (per row)
-  const [searchTerms, setSearchTerms] = useState({});
+  // ✅ État de recherche par ligne (texte tapé)
+  const [searchValues, setSearchValues] = useState({});
   const [activeRowId, setActiveRowId] = useState(null);
+  // ✅ Positions pour le dropdown en fixed
+  const [dropdownPositions, setDropdownPositions] = useState({});
 
   const getFilteredClients = (searchTerm) => {
     if (!searchTerm || searchTerm.length < 1) return [];
@@ -114,10 +116,15 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
   const removeRow = (id) => {
     if (rows.length > 1) {
       setRows(rows.filter((row) => row.id !== id));
-      setSearchTerms(prev => {
-        const newTerms = { ...prev };
-        delete newTerms[id];
-        return newTerms;
+      setSearchValues(prev => {
+        const newValues = { ...prev };
+        delete newValues[id];
+        return newValues;
+      });
+      setDropdownPositions(prev => {
+        const newPos = { ...prev };
+        delete newPos[id];
+        return newPos;
       });
       if (activeRowId === id) setActiveRowId(null);
     }
@@ -126,17 +133,40 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
   const resetForm = () => {
     setRows([{ id: Date.now(), date: new Date().toISOString().slice(0, 10), client_id: "", client_name: "", price: 0 }]);
     setNumberOfLines(1);
-    setSearchTerms({});
+    setSearchValues({});
+    setDropdownPositions({});
     setActiveRowId(null);
   };
 
   const handleSelectClient = (rowId, client) => {
     updateRow(rowId, 'client_id', client.id);
     updateRow(rowId, 'client_name', `${client.prenom} ${client.nom}`);
-    setSearchTerms(prev => ({ ...prev, [rowId]: `${client.prenom} ${client.nom}` }));
+    setSearchValues(prev => ({ ...prev, [rowId]: `${client.prenom} ${client.nom}` }));
     setActiveRowId(null);
+    setDropdownPositions(prev => {
+      const newPos = { ...prev };
+      delete newPos[rowId];
+      return newPos;
+    });
   };
 
+  // ✅ Met à jour la position du dropdown en fonction de l'input
+  const updateDropdownPosition = (rowId, inputElement) => {
+    if (!inputElement) return;
+    const rect = inputElement.getBoundingClientRect();
+    setDropdownPositions(prev => ({
+      ...prev,
+      [rowId]: {
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      }
+    }));
+  };
+
+  // ============================================================
+  // ✅ GENERATE PDF – version complète (inchangée)
+  // ============================================================
   const generatePDF = async () => {
     // Resolve client_id from name if missing
     const updatedRows = rows.map(row => {
@@ -301,6 +331,7 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
             <span className="report-line-count">📋 {rows.length} ligne(s)</span>
           </div>
 
+          {/* ============ RAPPORT PAPER ============ */}
           <div className="report-paper" ref={paperRef}>
             <div className="contract-header-table" style={{ width: "100%", borderBottom: "2px solid #d4af37", paddingBottom: "8px", marginBottom: "12px" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -344,9 +375,10 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
                 </thead>
                 <tbody>
                   {rows.map((row) => {
-                    const searchTerm = searchTerms[row.id] || "";
+                    const searchTerm = searchValues[row.id] || "";
                     const filteredClients = getFilteredClients(searchTerm);
                     const isActive = activeRowId === row.id;
+                    const dropdownPos = dropdownPositions[row.id];
 
                     return (
                       <tr key={row.id}>
@@ -362,34 +394,44 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
                           <input
                             type="text"
                             className="report-input"
-                            value={row.client_name}
+                            value={searchTerm}
                             onChange={(e) => {
                               const val = e.target.value;
-                              updateRow(row.id, "client_name", val);
-                              setSearchTerms(prev => ({ ...prev, [row.id]: val }));
+                              setSearchValues(prev => ({ ...prev, [row.id]: val }));
+                              setActiveRowId(row.id);
                               if (val === "") {
                                 updateRow(row.id, "client_id", "");
+                                updateRow(row.id, "client_name", "");
                               }
-                              setActiveRowId(row.id);
+                              updateDropdownPosition(row.id, e.target);
                             }}
-                            onFocus={() => setActiveRowId(row.id)}
+                            onFocus={(e) => {
+                              setActiveRowId(row.id);
+                              updateDropdownPosition(row.id, e.target);
+                            }}
+                            onBlur={() => setTimeout(() => setActiveRowId(null), 200)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") {
+                                setActiveRowId(null);
+                                e.target.blur();
+                              }
+                            }}
                             placeholder="Rechercher un client..."
                             autoComplete="off"
                           />
-                          {isActive && searchTerm.length >= 1 && (
-                            <div className="client-dropdown" style={{
-                              position: "absolute",
-                              bottom: "100%",
-                              left: 0,
-                              right: 0,
+                          {isActive && searchTerm.length >= 1 && dropdownPos && (
+                            <div className="client-dropdown-fixed" style={{
+                              position: 'fixed',
+                              top: dropdownPos.top,
+                              left: dropdownPos.left,
+                              width: dropdownPos.width,
                               background: "white",
                               border: "1px solid #e2e8f0",
                               borderRadius: "8px",
                               maxHeight: "200px",
                               overflowY: "auto",
-                              zIndex: 1000,
+                              zIndex: 9999,
                               boxShadow: "0 8px 16px rgba(0,0,0,0.1)",
-                              marginBottom: "4px"
                             }}>
                               {filteredClients.length === 0 ? (
                                 <div style={{ padding: "8px", color: "#94a3b8" }}>Aucun client trouvé</div>
@@ -461,7 +503,7 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
             </div>
           </div>
 
-          {/* Hidden PDF capture area */}
+          {/* ============ HIDDEN PDF CAPTURE AREA ============ */}
           <div style={{
             position: 'absolute',
             left: '-9999px',
@@ -549,7 +591,6 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
   );
 };
 
-// ---------- Edit Report Modal (with client search & payment registration) ----------
 const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations }) => {
   const dispatch = useDispatch();
   const clients = useSelector(selectClients);
@@ -563,20 +604,59 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
   const [searchTerms, setSearchTerms] = useState({});
   const [activeRowId, setActiveRowId] = useState(null);
 
+  // ---------- useEffect (remplacement) ----------
   useEffect(() => {
     if (report && report.rows) {
-      const parsed = typeof report.rows === "string" ? JSON.parse(report.rows) : report.rows;
-      setRows(
-        parsed.map((row) => ({
-          id: Date.now() + Math.random(),
-          date: row.date || new Date().toISOString().slice(0, 10),
-          client_id: row.client_id || "",
-          client_name: row.client_name || row.nom || "",
-          price: row.price || 0,
-        }))
-      );
+      const parsed =
+        typeof report.rows === "string"
+          ? JSON.parse(report.rows)
+          : report.rows;
+
+      const newRows = parsed.map((row) => ({
+        id: Date.now() + Math.random(),
+        date: row.date || new Date().toISOString().slice(0, 10),
+        client_id: row.client_id || "",
+        client_name: row.client_name || row.nom || "",
+        price: row.price || 0,
+      }));
+
+      setRows(newRows);
+
+      const initialSearchTerms = {};
+      newRows.forEach((row) => {
+        initialSearchTerms[row.id] = row.client_name;
+      });
+
+      setSearchTerms(initialSearchTerms);
+    } else {
+      setRows([]);
+      setSearchTerms({});
     }
   }, [report]);
+
+  // ---------- handleSelectClient (remplacement) ----------
+  const handleSelectClient = (rowId, client) => {
+    const fullName = `${client.prenom} ${client.nom}`;
+
+    setRows((prevRows) =>
+      prevRows.map((row) =>
+        row.id === rowId
+          ? {
+              ...row,
+              client_id: client.id,
+              client_name: fullName,
+            }
+          : row
+      )
+    );
+
+    setSearchTerms((prev) => ({
+      ...prev,
+      [rowId]: fullName,
+    }));
+
+    setActiveRowId(null);
+  };
 
   const getFilteredClients = (searchTerm) => {
     if (!searchTerm || searchTerm.length < 1) return [];
@@ -631,173 +711,158 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
     }
   };
 
-  const handleSelectClient = (rowId, client) => {
-    updateRow(rowId, 'client_id', client.id);
-    updateRow(rowId, 'client_name', `${client.prenom} ${client.nom}`);
-    setSearchTerms(prev => ({ ...prev, [rowId]: `${client.prenom} ${client.nom}` }));
-    setActiveRowId(null);
-  };
-
   const calculateTotal = () => rows.reduce((sum, row) => sum + Number(row.price), 0);
 
   const handleSave = async () => {
-  // Mettre à jour les rows : essayer de résoudre les noms de clients en IDs si manquant
-  const updatedRows = rows.map(row => {
-    if (!row.client_id && row.client_name) {
-      const trimmed = row.client_name.trim();
-      const found = clients.find(c => 
-        `${c.prenom} ${c.nom}`.toLowerCase() === trimmed.toLowerCase()
-      );
-      if (found) {
-        return { ...row, client_id: found.id };
+    const updatedRows = rows.map(row => {
+      if (!row.client_id && row.client_name) {
+        const trimmed = row.client_name.trim();
+        const found = clients.find(c => 
+          `${c.prenom} ${c.nom}`.toLowerCase() === trimmed.toLowerCase()
+        );
+        if (found) {
+          return { ...row, client_id: found.id };
+        }
       }
+      return row;
+    });
+    setRows(updatedRows);
+
+    const validRows = updatedRows.filter((row) => row.client_id && parseFloat(row.price) > 0);
+    if (validRows.length === 0) {
+      toast.warning("Ajoutez au moins une ligne valide");
+      return;
     }
-    return row;
-  });
-  setRows(updatedRows);
 
-  const validRows = updatedRows.filter((row) => row.client_id && parseFloat(row.price) > 0);
-  if (validRows.length === 0) {
-    toast.warning("Ajoutez au moins une ligne valide");
-    return;
-  }
-
-  setSaving(true);
-  try {
-    // ========== ÉTAPE 1 : SUPPRIMER LES ANCIENS PAIEMENTS LIÉS AU RAPPORT ==========
-    const reportFileName = report.file_name;
-    for (const row of validRows) {
-      // Récupérer toutes les réservations du client
-      const clientReservations = reservations.filter(r => r.client_id === row.client_id);
-      for (const res of clientReservations) {
-        // Vérifier si la réservation a un historique de paiements
-        if (res.payment_history && Array.isArray(res.payment_history)) {
-          // Filtrer les paiements dont la note contient le nom du fichier du rapport
-          const paymentsToRemove = res.payment_history.filter(p => 
-            p.notes && (
-              p.notes.includes(reportFileName) ||
-              p.notes.includes(`Rapport manuel (${reportFileName})`) ||
-              p.notes.includes(`Rapport modifié (${reportFileName})`)
-            )
-          );
-          // Supprimer chaque paiement trouvé
-          for (const payment of paymentsToRemove) {
-            try {
-              await dispatch(removePaymentFromReservation({
-                reservationId: res.id,
-                paymentId: payment.id
-              })).unwrap();
-            } catch (err) {
-              console.warn(`Échec de suppression du paiement #${payment.id} pour réservation #${res.id}:`, err);
+    setSaving(true);
+    try {
+      const reportFileName = report.file_name;
+      for (const row of validRows) {
+        const clientReservations = reservations.filter(r => r.client_id === row.client_id);
+        for (const res of clientReservations) {
+          if (res.payment_history && Array.isArray(res.payment_history)) {
+            const paymentsToRemove = res.payment_history.filter(p => 
+              p.notes && (
+                p.notes.includes(reportFileName) ||
+                p.notes.includes(`Rapport manuel (${reportFileName})`) ||
+                p.notes.includes(`Rapport modifié (${reportFileName})`)
+              )
+            );
+            for (const payment of paymentsToRemove) {
+              try {
+                await dispatch(removePaymentFromReservation({
+                  reservationId: res.id,
+                  paymentId: payment.id
+                })).unwrap();
+              } catch (err) {
+                console.warn(`Failed to remove payment #${payment.id} for reservation #${res.id}:`, err);
+              }
             }
           }
         }
       }
-    }
 
-    // ========== ÉTAPE 2 : GÉNÉRER LE PDF ET METTRE À JOUR LE RAPPORT ==========
-    const paperElement = pdfPaperRef.current;
-    if (!paperElement) {
-      toast.error("Impossible de capturer le rapport");
-      return;
-    }
+      const paperElement = pdfPaperRef.current;
+      if (!paperElement) {
+        toast.error("Impossible de capturer le rapport");
+        return;
+      }
 
-    const canvas = await html2canvas(paperElement, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-    });
+      const canvas = await html2canvas(paperElement, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+      });
 
-    const imgData = canvas.toDataURL('image/png');
-    const doc = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
+      const imgData = canvas.toDataURL('image/png');
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
 
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    if (imgHeight > pageHeight) {
-      const scale = pageHeight / imgHeight;
-      const scaledWidth = imgWidth * scale;
-      const scaledHeight = imgHeight * scale;
-      doc.addImage(imgData, 'PNG', (pageWidth - scaledWidth) / 2, 0, scaledWidth, scaledHeight);
-    } else {
-      const verticalOffset = (pageHeight - imgHeight) / 2;
-      doc.addImage(imgData, 'PNG', 0, verticalOffset, imgWidth, imgHeight);
-    }
+      if (imgHeight > pageHeight) {
+        const scale = pageHeight / imgHeight;
+        const scaledWidth = imgWidth * scale;
+        const scaledHeight = imgHeight * scale;
+        doc.addImage(imgData, 'PNG', (pageWidth - scaledWidth) / 2, 0, scaledWidth, scaledHeight);
+      } else {
+        const verticalOffset = (pageHeight - imgHeight) / 2;
+        doc.addImage(imgData, 'PNG', 0, verticalOffset, imgWidth, imgHeight);
+      }
 
-    const fileName = report.file_name || `Rapport_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.pdf`;
-    const pdfBlob = doc.output('blob');
-    const pdfBase64 = await blobToBase64(pdfBlob);
+      const fileName = report.file_name || `Rapport_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.pdf`;
+      const pdfBlob = doc.output('blob');
+      const pdfBase64 = await blobToBase64(pdfBlob);
 
-    const token = localStorage.getItem("authToken");
-    const response = await fetch(`${API_URL}/reports/${report.id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        file_name: fileName,
-        pdf_data: pdfBase64,
-        rows: validRows.map(r => ({ date: r.date, client_name: r.client_name, client_id: r.client_id, price: r.price })),
-        total_ht: validRows.reduce((sum, row) => sum + Number(row.price), 0),
-      }),
-    });
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(`${API_URL}/reports/${report.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          file_name: fileName,
+          pdf_data: pdfBase64,
+          rows: validRows.map(r => ({ date: r.date, client_name: r.client_name, client_id: r.client_id, price: r.price })),
+          total_ht: validRows.reduce((sum, row) => sum + Number(row.price), 0),
+        }),
+      });
 
-    if (!response.ok) {
-      toast.error("Erreur lors de la modification");
-      return;
-    }
+      if (!response.ok) {
+        toast.error("Erreur lors de la modification");
+        return;
+      }
 
-    // ========== ÉTAPE 3 : AJOUTER LES NOUVEAUX PAIEMENTS ==========
-    let paymentErrors = 0;
-    for (const row of validRows) {
-      try {
-        const clientReservations = reservations.filter(r => r.client_id === row.client_id);
-        let targetReservation = clientReservations.find(r => r.status === 'confirmed' && r.remaining_amount > 0);
-        if (!targetReservation) {
-          targetReservation = clientReservations
-            .filter(r => r.remaining_amount > 0)
-            .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0];
-        }
-        if (targetReservation) {
-          await dispatch(addPaymentToReservation({
-            reservationId: targetReservation.id,
-            paymentData: {
-              amount: row.price,
-              date: row.date,
-              method: 'cash',
-              notes: `Rapport modifié (${fileName})`
-            }
-          })).unwrap();
-        } else {
-          console.warn(`Aucune réservation éligible pour le client ${row.client_name} (ID: ${row.client_id})`);
+      let paymentErrors = 0;
+      for (const row of validRows) {
+        try {
+          const clientReservations = reservations.filter(r => r.client_id === row.client_id);
+          let targetReservation = clientReservations.find(r => r.status === 'confirmed' && r.remaining_amount > 0);
+          if (!targetReservation) {
+            targetReservation = clientReservations
+              .filter(r => r.remaining_amount > 0)
+              .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0];
+          }
+          if (targetReservation) {
+            await dispatch(addPaymentToReservation({
+              reservationId: targetReservation.id,
+              paymentData: {
+                amount: row.price,
+                date: row.date,
+                method: 'cash',
+                notes: `Rapport modifié (${fileName})`
+              }
+            })).unwrap();
+          } else {
+            console.warn(`No eligible reservation for client ${row.client_name} (ID: ${row.client_id})`);
+            paymentErrors++;
+          }
+        } catch (err) {
+          console.error(`Error adding payment for client ${row.client_name}:`, err);
           paymentErrors++;
         }
-      } catch (err) {
-        console.error(`Erreur lors de l'ajout du paiement pour le client ${row.client_name}:`, err);
-        paymentErrors++;
       }
+
+      if (paymentErrors > 0) {
+        toast.warning(`Rapport modifié, mais ${paymentErrors} paiement(s) n'ont pas pu être appliqués.`);
+      } else {
+        toast.success("Rapport modifié et paiements enregistrés");
+      }
+
+      onClose();
+      if (onReportSaved) onReportSaved();
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de la modification du rapport");
+    } finally {
+      setSaving(false);
     }
-
-    if (paymentErrors > 0) {
-      toast.warning(`Rapport modifié, mais ${paymentErrors} paiement(s) n'ont pas pu être appliqués.`);
-    } else {
-      toast.success("Rapport modifié et paiements enregistrés");
-    }
-
-    onClose();
-    if (onReportSaved) onReportSaved();
-
-  } catch (err) {
-    console.error(err);
-    toast.error("Erreur lors de la modification du rapport");
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
   if (!isOpen || !report) return null;
 
@@ -889,17 +954,33 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
                           />
                         </td>
                         <td style={{ position: "relative" }}>
+                          {/* ---------- Champ client (remplacement) ---------- */}
                           <input
                             type="text"
                             className="report-input"
-                            value={row.client_name}
+                            value={searchTerms[row.id] ?? ""}
                             onChange={(e) => {
                               const val = e.target.value;
-                              updateRow(row.id, "client_name", val);
-                              setSearchTerms(prev => ({ ...prev, [row.id]: val }));
-                              if (val === "") {
-                                updateRow(row.id, "client_id", "");
-                              }
+
+                              // Update only the search input immediately
+                              setSearchTerms((prev) => ({
+                                ...prev,
+                                [row.id]: val,
+                              }));
+
+                              // Keep row data synchronized
+                              setRows((prevRows) =>
+                                prevRows.map((r) =>
+                                  r.id === row.id
+                                    ? {
+                                        ...r,
+                                        client_name: val,
+                                        client_id: val === "" ? "" : r.client_id,
+                                      }
+                                    : r
+                                )
+                              );
+
                               setActiveRowId(row.id);
                             }}
                             onFocus={() => setActiveRowId(row.id)}
@@ -1144,31 +1225,106 @@ const SavedReportsSection = ({ onEditReport, refreshTrigger }) => {
     }
   };
 
+  // ✅ Nouvelle fonction de téléchargement : régénère un PDF simple et centré
   const downloadReport = async (report, e) => {
-    e.stopPropagation();
+  e.stopPropagation();
+  try {
+    const rows = report.rows || [];
+    const total = Number(report.total_ht) || 0;
+
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // Chargement du logo en base64
+    let logoDataUrl = '';
     try {
-      const token = localStorage.getItem("authToken");
-      const res = await fetch(`${API_URL}/download-report/${report.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = report.file_name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        toast.success("Téléchargé");
-      } else {
-        toast.error("Erreur téléchargement");
-      }
-    } catch (err) {
-      toast.error("Erreur");
+      const response = await fetch(logoImage);
+      const blob = await response.blob();
+      logoDataUrl = await blobToBase64(blob);
+    } catch (e) {
+      console.warn('Logo non chargé', e);
     }
-  };
+
+    const margin = 14;
+    let y = 20;
+
+    // Logo à gauche
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, 'PNG', margin, y - 5, 30, 20);
+    }
+    // Titre centré
+    doc.setFontSize(22);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Rapport', pageWidth / 2, y + 10, { align: 'center' });
+
+    y += 15;
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, y, { align: 'center' });
+    y += 8;
+
+    // Préparation du tableau
+    const tableHeaders = [['Date', 'Client', 'Prix HT (MAD)']];
+    const tableRows = rows.map(row => [
+      row.date || '',
+      row.client_name || '',
+      row.price ? Number(row.price).toFixed(2) : '0.00'
+    ]);
+
+    autoTable(doc, {
+      head: tableHeaders,
+      body: tableRows,
+      startY: y + 5,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [234, 179, 8],
+        textColor: [0, 0, 0],
+        fontStyle: 'bold',
+        halign: 'center',
+        fontSize: 10,
+      },
+      bodyStyles: {
+        halign: 'center',
+        fontSize: 9,
+      },
+      alternateRowStyles: {
+        fillColor: [245, 245, 245],
+      },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 60 },
+        2: { cellWidth: 30 },
+      },
+      margin: { left: (pageWidth - (pageWidth * 0.8)) / 2, right: (pageWidth - (pageWidth * 0.8)) / 2 },
+      tableWidth: 'auto',
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Total HT: ${total.toFixed(2)} DH`, pageWidth / 2, finalY, { align: 'center' });
+
+    // Pied de page
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('OULFA DRIVE — Document généré informatiquement.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
+    const pdfBlob = doc.output('blob');
+    const url = URL.createObjectURL(pdfBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = report.file_name || `Rapport_${new Date().toISOString().slice(0,10)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success("PDF téléchargé");
+  } catch (err) {
+    console.error(err);
+    toast.error("Erreur lors du téléchargement");
+  }
+};
 
   if (loading)
     return (
@@ -2416,7 +2572,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, color, onClick, clickabl
   </div>
 );
 
-// ==================== Component: MatriculeCategoryCard ====================
+// ==================== Component: MatriculeCategoryCard (modifié) ====================
 const MatriculeCategoryCard = ({
   title,
   icon: Icon,
@@ -2435,6 +2591,7 @@ const MatriculeCategoryCard = ({
   const [isExpanded, setIsExpanded] = useState(expanded || false);
   const [showAll, setShowAll] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showTodayOnly, setShowTodayOnly] = useState(false);
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);
@@ -2442,20 +2599,35 @@ const MatriculeCategoryCard = ({
     if (isExpanded) {
       setShowAll(false);
       setSearchTerm('');
+      setShowTodayOnly(false);
     }
   };
 
   const filteredMatricules = useMemo(() => {
-    if (!searchTerm) return matricules;
-    const lower = searchTerm.toLowerCase();
-    return matricules.filter(mat =>
-      mat.matricule_code?.toLowerCase().includes(lower) ||
-      mat.car?.brand?.toLowerCase().includes(lower) ||
-      mat.car?.model?.toLowerCase().includes(lower) ||
-      mat.currentReservation?.client?.prenom?.toLowerCase().includes(lower) ||
-      mat.currentReservation?.client?.nom?.toLowerCase().includes(lower)
-    );
-  }, [matricules, searchTerm]);
+    let filtered = matricules;
+    if (searchTerm) {
+      const lower = searchTerm.toLowerCase();
+      filtered = filtered.filter(mat =>
+        mat.matricule_code?.toLowerCase().includes(lower) ||
+        mat.car?.brand?.toLowerCase().includes(lower) ||
+        mat.car?.model?.toLowerCase().includes(lower) ||
+        mat.currentReservation?.client?.prenom?.toLowerCase().includes(lower) ||
+        mat.currentReservation?.client?.nom?.toLowerCase().includes(lower)
+      );
+    }
+    if (showTodayOnly && title === 'Retour imminent') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(mat => {
+        const endDate = mat.currentReservation?.end_date;
+        if (!endDate) return false;
+        const d = new Date(endDate);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() === today.getTime();
+      });
+    }
+    return filtered;
+  }, [matricules, searchTerm, showTodayOnly, title]);
 
   const displayMatricules = showAll ? filteredMatricules : filteredMatricules.slice(0, 5);
   const hasMore = filteredMatricules.length > 5;
@@ -2475,6 +2647,31 @@ const MatriculeCategoryCard = ({
     const diffTime = end - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
+  };
+
+  const downloadCSV = () => {
+    const filtered = filteredMatricules;
+    if (filtered.length === 0) {
+      toast.warning("Aucune donnée à exporter");
+      return;
+    }
+    const headers = ['Matricule', 'Marque/Modèle', 'Kilométrage', 'Client', 'Date retour', 'Statut'];
+    const rows = filtered.map(mat => [
+      mat.matricule_code || '',
+      `${mat.car?.brand || ''} ${mat.car?.model || ''}`.trim(),
+      mat.kilometrage?.toLocaleString() || '',
+      mat.currentReservation?.client ? `${mat.currentReservation.client.prenom} ${mat.currentReservation.client.nom}` : '',
+      mat.currentReservation?.end_date || '',
+      mat.status === 'active' ? 'Actif' : 'Inactif'
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `matricules_${title.replace(/\s/g, '_')}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    toast.success("Excel téléchargé");
   };
 
   return (
@@ -2512,6 +2709,42 @@ const MatriculeCategoryCard = ({
                 }} 
               />
             )}
+            {isRetourImminent && (
+              <button 
+                className={`today-filter-btn ${showTodayOnly ? 'active' : ''}`}
+                onClick={() => setShowTodayOnly(!showTodayOnly)}
+                style={{
+                  marginLeft: 'auto',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '1rem',
+                  border: '1px solid #e2e8f0',
+                  background: showTodayOnly ? '#eab308' : 'white',
+                  color: showTodayOnly ? 'white' : '#1e293b',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                📅 Aujourd'hui
+              </button>
+            )}
+            <button
+              onClick={downloadCSV}
+              style={{
+                padding: '0.2rem 0.6rem',
+                borderRadius: '1rem',
+                border: '1px solid #e2e8f0',
+                background: 'white',
+                fontSize: '0.65rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                marginLeft: '0.5rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              ⬇️ Excel
+            </button>
           </div>
 
           {loading ? (
@@ -3009,6 +3242,26 @@ export default function AdminDashboard() {
   const contacts = useSelector(selectContacts);
   const utilisateurs = useSelector(selectUtilisateurs);
   const currentUser = useSelector(selectUser);
+
+  // NEW: Get permissions from Redux to check 'reports' access
+  const myPermissions = useSelector((state) => state.permissions?.myPermissions || []);
+
+  // Helper to check if user can view reports
+  const canViewReports = () => {
+    const userRole = currentUser?.role;
+    // Superadmin always has access
+    if (userRole === 'superadmin') return true;
+    // Admin might have default access? We'll use the permission system.
+    // If you want admins to always see reports, uncomment the next line:
+    // if (userRole === 'admin') return true;
+    // Otherwise, check if the user has a 'reports' permission
+    if (Array.isArray(myPermissions)) {
+      // myPermissions can be array of strings or objects with page_slug
+      const hasPerm = myPermissions.some(p => p === 'reports' || p?.page_slug === 'reports');
+      return hasPerm;
+    }
+    return false;
+  };
 
   // Report state
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -4058,6 +4311,50 @@ export default function AdminDashboard() {
             border-color: #eab308;
             box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.1);
           }
+          .inline-info-message {
+            background: #fefce8;
+            border: 1px solid #fde047;
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.75rem;
+            color: #854d0e;
+            margin-top: 16px;
+          }
+          .inline-error-message {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.75rem;
+            color: #dc2626;
+            margin-top: 16px;
+          }
+          .inline-info-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+          }
+          .inline-info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+          }
+          .inline-info-item .info-label {
+            font-size: 0.75rem;
+            color: #64748b;
+          }
+          .inline-info-item .info-value {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #1e293b;
+          }
           .inline-secondary-btn {
             background: white;
             border: 1.5px solid #e2e8f0;
@@ -4093,6 +4390,11 @@ export default function AdminDashboard() {
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(26, 26, 46, 0.4);
             color: #fbbf24;
+          }
+          .inline-primary-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
           }
           .inline-form-footer {
             display: flex;
@@ -4218,7 +4520,6 @@ export default function AdminDashboard() {
 
         .dashboard { max-width: 1400px; }
 
-        /* ===== FILTER TOOLBAR ===== */
         .filter-toolbar {
           display: flex;
           align-items: center;
@@ -4266,7 +4567,6 @@ export default function AdminDashboard() {
           margin-right: 0.25rem;
         }
 
-        /* Custom filter dropdown */
         .filter-dropdown-wrapper {
           position: relative;
           display: inline-block;
@@ -4645,7 +4945,7 @@ export default function AdminDashboard() {
           text-align: center;
         }
 
-        /* ===== NEW & IMPROVED MATRICULE CARDS ===== */
+        /* Matricule Cards */
         .matricule-category-card {
           background: white;
           border-radius: 16px;
@@ -4707,7 +5007,6 @@ export default function AdminDashboard() {
           border-top: 1px solid #e9edf2;
           background: white;
         }
-        /* Search bar inside dropdown */
         .matricule-category-card .dropdown-search {
           display: flex;
           align-items: center;
@@ -4753,7 +5052,6 @@ export default function AdminDashboard() {
           background: #e9edf2;
           color: #475569;
         }
-
         .matricule-category-card .dropdown-list {
           display: flex;
           flex-direction: column;
@@ -4918,7 +5216,6 @@ export default function AdminDashboard() {
           color: #94a3b8;
           font-size: 0.85rem;
         }
-        /* Color accents */
         .matricule-category-card.blue .card-header { border-left: 4px solid #3b82f6; }
         .matricule-category-card.yellow .card-header { border-left: 4px solid #eab308; }
         .matricule-category-card.green .card-header { border-left: 4px solid #22c55e; }
@@ -4932,7 +5229,6 @@ export default function AdminDashboard() {
           justify-content: flex-start;
         }
 
-        /* Reserve Modal - custom client list */
         .client-list-container {
           max-height: 200px;
           overflow-y: auto;
@@ -4990,7 +5286,16 @@ export default function AdminDashboard() {
           box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.1);
         }
 
-        /* Responsive */
+        /* Today filter button */
+        .today-filter-btn.active {
+          background: #eab308;
+          color: white;
+          border-color: #eab308;
+        }
+        .today-filter-btn:hover {
+          opacity: 0.8;
+        }
+
         @media (max-width: 768px) {
           .charts-section { grid-template-columns: 1fr; }
           .chart-card-full { grid-column: span 1; }
@@ -5113,8 +5418,6 @@ export default function AdminDashboard() {
           .report-table td { border-bottom-color: #334155; }
           .report-input { background: #0f172a; border-color: #334155; color: #f1f5f9; }
           .report-input:focus { border-color: #d4af37; }
-
-          /* Dark mode matricule cards */
           .matricule-category-card { background: #1e293b; border-color: #334155; }
           .matricule-category-card .card-header { background: #1e293b; }
           .matricule-category-card .card-header:hover { background: #0f172a; }
@@ -5142,7 +5445,6 @@ export default function AdminDashboard() {
           .matricule-category-card .dropdown-search:focus-within { background: #1e293b; border-color: #eab308; }
           .matricule-category-card .dropdown-search input { color: #f1f5f9; }
           .matricule-category-card .dropdown-search input::placeholder { color: #64748b; }
-
           .form-control { background: #0f172a; border-color: #334155; color: #f1f5f9; }
           .form-control:focus { border-color: #eab308; }
           .form-group label { color: #94a3b8; }
@@ -5150,7 +5452,6 @@ export default function AdminDashboard() {
           .client-list-item:hover { background: #334155; }
           .client-list-item.selected { background: #422006; }
           .client-list-item .client-phone { color: #94a3b8; }
-
           .filter-toolbar { background: #1e293b; border-color: #334155; }
           .filter-toolbar .filter-nav-btn { background: #0f172a; border-color: #334155; color: #fca5a5; }
           .filter-toolbar .filter-nav-btn:hover { background: #422006; border-color: #d97706; }
@@ -5163,6 +5464,7 @@ export default function AdminDashboard() {
           .filter-dropdown-icon { color: #94a3b8; }
           .filter-dropdown-chevron { color: #64748b; }
           .filter-toolbar .calendar-icon { color: #94a3b8; }
+          .today-filter-btn.active { background: #eab308; color: #0f172a; }
         }
       `}</style>
 
@@ -5221,19 +5523,25 @@ export default function AdminDashboard() {
               searchType={searchType}
               setSearchType={setSearchType}
             />
-            <button className="contract-manual-btn" onClick={() => setReportModalOpen(true)}>
-              <FileText size={16} /> Rapport manuel
-            </button>
+            {/* Conditionally show "Rapport manuel" button */}
+            {canViewReports() && (
+              <button className="contract-manual-btn" onClick={() => setReportModalOpen(true)}>
+                <FileText size={16} /> Rapport manuel
+              </button>
+            )}
             <button className="contract-manual-btn" onClick={() => setManualContractOpen(true)}>
               <FileText size={16} /> Contrat Manuel
             </button>
-            <div className="revenue-card">
-              <TrendingUp size={20} />
-              <div>
-                <div className="revenue-label">Revenu confirmé</div>
-                <div className="revenue-value">{revenue.toLocaleString()} DH</div>
+            {/* Conditionally show "Revenu confirmé" card */}
+            {canViewReports() && (
+              <div className="revenue-card">
+                <TrendingUp size={20} />
+                <div>
+                  <div className="revenue-label">Revenu confirmé</div>
+                  <div className="revenue-value">{revenue.toLocaleString()} DH</div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -5446,10 +5754,13 @@ export default function AdminDashboard() {
         </div>
 
         {/* ====== SAVED REPORTS SECTION ====== */}
-        <SavedReportsSection
-          onEditReport={(report) => setEditReport(report)}
-          refreshTrigger={refreshReports}
-        />
+        {/* Conditionally show saved reports */}
+        {canViewReports() && (
+          <SavedReportsSection
+            onEditReport={(report) => setEditReport(report)}
+            refreshTrigger={refreshReports}
+          />
+        )}
 
         {/* ====== MODALS ====== */}
         {selectedClient && (
@@ -5484,7 +5795,7 @@ export default function AdminDashboard() {
           onClose={() => setEditReport(null)}
           report={editReport}
           onReportSaved={() => { setRefreshReports(prev => prev + 1); setEditReport(null); }}
-          reservations={reservations}   // <-- Pass reservations for payment registration
+          reservations={reservations}
         />
 
         <ReserveModal

@@ -27,7 +27,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import checklistImage from "../../assets/checklist.png";
 import logoImage from "../../assets/logo.png";
-import agentSignatureImage from "../../assets/cache.png"; // Import de l'image signature
+import agentSignatureImage from "../../assets/cache.png";
 
 // ==================== ContractDisplayOptions ====================
 const ContractDisplayOptions = ({ options, onOptionChange, onResetAll }) => {
@@ -211,7 +211,7 @@ const ContractLocation = ({ reservation, showSignatures = false, currentUser, di
     end.setHours(0, 0, 0, 0);
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays === 0 ? 1 : diffDays;
+    return diffDays === 0 ? 1 : diffDays; // exclusive: 07/07 -> 07/08 = 1
   };
 
   const getDisplayOption = (section) => displayOptions[section] || "show";
@@ -391,6 +391,8 @@ const ContractLocation = ({ reservation, showSignatures = false, currentUser, di
                   <div className="field-row"><span className="field-label">Retour :</span><span className="field-value">{getDisplayValue(datesOption, `${formatDate(reservation?.end_date)} à ${reservation?.end_time || "18:00"}`)}</span></div>
                   <div className="field-row"><span className="field-label">Durée :</span><span className="field-value">{getDisplayValue(rentalDaysOption, `${calculateRentalDays()} jours`)}</span></div>
                   <div className="field-row"><span className="field-label">Km départ :</span><span className="field-value">{getDisplayValue(kilometrageOption, `${reservation?.kilometrage_sortie || "—"} km`)}</span></div>
+                  {/* ==== ADDED: Km retour ==== */}
+                  <div className="field-row"><span className="field-label">Km retour :</span><span className="field-value">{getDisplayValue(kilometrageOption, reservation?.kilometrage_entree ? `${reservation.kilometrage_entree} km` : "—")}</span></div>
                   <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, currentUserName)}</span></div>
                   <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, reservationCreatorName)}</span></div>
                 </div>
@@ -794,14 +796,29 @@ const ReservationForm = ({
     setFilteredMatricules(filtered);
   }, [matriculeSearch, matricules]);
 
+  // ===== MODIFIED: compute rental days exclusively =====
   useEffect(() => {
     if (editingReservation) {
+      const computeRentalDays = (start, end) => {
+        if (!start || !end) return 1;
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        startDate.setHours(0,0,0,0);
+        endDate.setHours(0,0,0,0);
+        const diffTime = Math.abs(endDate - startDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays === 0 ? 1 : diffDays;
+      };
+
       setFormData({
         start_date: editingReservation.start_date?.split("T")[0] || "",
         end_date: editingReservation.end_date?.split("T")[0] || "",
         start_time: editingReservation.start_time || "08:00",
         end_time: editingReservation.end_time || "18:00",
-        rental_days: editingReservation.rental_days || editingReservation.total_days || 1,
+        rental_days: editingReservation.rental_days || editingReservation.total_days || 
+                     (editingReservation.start_date && editingReservation.end_date 
+                       ? computeRentalDays(editingReservation.start_date, editingReservation.end_date) 
+                       : 1),
         total_price: editingReservation.total_price || 0,
         amount_paid: editingReservation.amount_paid || 0,
         remaining_amount: editingReservation.remaining_amount || 0,
@@ -870,12 +887,13 @@ const ReservationForm = ({
     }
   }, [formData.car_id, formData.rental_days, formData.amount_paid, cars]);
 
+  // ===== MODIFIED: handlers for exclusive day counting =====
   const handleStartDateChange = (value) => {
     setFormData(prev => ({ ...prev, start_date: value }));
     if (value && formData.rental_days) {
       const start = new Date(value);
       const end = new Date(start);
-      end.setDate(start.getDate() + formData.rental_days - 1);
+      end.setDate(start.getDate() + formData.rental_days); // exclusive: + days
       setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
     }
   };
@@ -886,8 +904,8 @@ const ReservationForm = ({
       const start = new Date(formData.start_date);
       const end = new Date(value);
       const diffTime = Math.abs(end - start);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      setFormData(prev => ({ ...prev, rental_days: diffDays }));
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      setFormData(prev => ({ ...prev, rental_days: diffDays === 0 ? 1 : diffDays }));
     }
   };
 
@@ -897,7 +915,7 @@ const ReservationForm = ({
     if (formData.start_date) {
       const start = new Date(formData.start_date);
       const end = new Date(start);
-      end.setDate(start.getDate() + days - 1);
+      end.setDate(start.getDate() + days); // exclusive
       setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
     }
   };
@@ -1367,7 +1385,6 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
       if (!contractElement) throw new Error("Contract element not found");
       const contractClone = contractElement.cloneNode(true);
 
-      // ---- Insertion de la signature de l'agent si demandée ----
       if (includeSignatures) {
         const signatureBlocks = contractClone.querySelectorAll('.signature-block');
         if (signatureBlocks.length >= 1) {
@@ -1577,6 +1594,9 @@ export default function AdminReservationsStatus() {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeReservationId, setCompleteReservationId] = useState(null);
   const [kilometrageRetour, setKilometrageRetour] = useState('');
+  // NEW: states for return date and time
+  const [returnDate, setReturnDate] = useState('');
+  const [returnTime, setReturnTime] = useState('');
 
   // Nouveaux états pour la popup d'impression
   const [showPrintOptions, setShowPrintOptions] = useState(false);
@@ -1741,6 +1761,9 @@ export default function AdminReservationsStatus() {
   const openCompleteModal = (reservation) => {
     setCompleteReservationId(reservation.id);
     setKilometrageRetour(reservation.kilometrage_entree || reservation.matricule_kilometrage_at_start || '');
+    // Pre-fill return date & time
+    setReturnDate(reservation.end_date ? reservation.end_date.split('T')[0] : '');
+    setReturnTime(reservation.end_time || '18:00');
     setShowCompleteModal(true);
   };
 
@@ -1752,7 +1775,12 @@ export default function AdminReservationsStatus() {
     try {
       await dispatch(updateReservation({
         id: completeReservationId,
-        data: { status: 'completed', kilometrage_entree: parseFloat(kilometrageRetour) }
+        data: {
+          status: 'completed',
+          end_date: returnDate,
+          end_time: returnTime,
+          kilometrage_entree: parseFloat(kilometrageRetour)
+        }
       })).unwrap();
       toast.success("Réservation terminée avec succès !");
       await dispatch(fetchReservations(true));
@@ -1763,6 +1791,8 @@ export default function AdminReservationsStatus() {
     setShowCompleteModal(false);
     setCompleteReservationId(null);
     setKilometrageRetour('');
+    setReturnDate('');
+    setReturnTime('');
   };
 
   // ----- WhatsApp handler -----
@@ -1823,7 +1853,7 @@ export default function AdminReservationsStatus() {
     window.open(whatsappUrl, '_blank');
   };
 
-  // ----- Signature Link handler (copies link to clipboard) -----
+  // ----- Signature Link handler -----
   const handleSignatureLink = async (reservation) => {
     if (reservation.status !== 'confirmed') {
         toast.warning("Seules les réservations confirmées peuvent avoir un lien de signature.");
@@ -1948,7 +1978,7 @@ export default function AdminReservationsStatus() {
     const end = new Date(endDate);
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays === 0 ? 1 : diffDays;
+    return diffDays === 0 ? 1 : diffDays; // exclusive
   };
 
   const calculateDaysRemaining = (reservation) => {
@@ -1995,7 +2025,6 @@ export default function AdminReservationsStatus() {
       }
       const contractClone = contractElement.cloneNode(true);
 
-      // ---- Insertion de la signature de l'agent si demandée ----
       if (includeSignatures) {
         const signatureBlocks = contractClone.querySelectorAll('.signature-block');
         if (signatureBlocks.length >= 1) {
@@ -2208,8 +2237,29 @@ export default function AdminReservationsStatus() {
           <button onClick={() => setShowCompleteModal(false)} className="modal-close"><X size={20} /></button>
         </div>
         <div className="modal-body" style={{ padding: '1.5rem' }}>
-          <p style={{ marginBottom: '1rem' }}>Entrez le kilométrage retour du véhicule :</p>
-          <div className="form-group">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
+              <label>Date de retour</label>
+              <input
+                type="date"
+                value={returnDate}
+                onChange={(e) => setReturnDate(e.target.value)}
+                className="inline-input"
+                style={{ width: '100%', padding: '0.75rem' }}
+              />
+            </div>
+            <div className="form-group">
+              <label>Heure de retour</label>
+              <input
+                type="time"
+                value={returnTime}
+                onChange={(e) => setReturnTime(e.target.value)}
+                className="inline-input"
+                style={{ width: '100%', padding: '0.75rem' }}
+              />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginTop: '1rem' }}>
             <label>Km retour</label>
             <input
               type="number"
@@ -2380,7 +2430,6 @@ export default function AdminReservationsStatus() {
                                 <button onClick={() => setStatus(r.id, "pending")} className="action-btn action-btn-warning" title="Remettre en attente">↩</button>
                               ) : null}
                               <button onClick={() => handleViewContract(r)} className="action-btn action-btn-info" title="Voir contrat"><FileText size={16} /></button>
-                              {/* Bouton Imprimer avec popup */}
                               <button onClick={() => handlePrintClick(r)} className="action-btn action-btn-print" title="Imprimer"><Printer size={16} /></button>
                               <button onClick={() => handleWhatsApp(r)} className="action-btn action-btn-whatsapp" title="Envoyer un message WhatsApp"><MessageCircle size={16} /></button>
                               <button onClick={() => handleEdit(r)} className="action-btn action-btn-edit" title="Modifier"><Edit size={16} /></button>
@@ -2695,127 +2744,114 @@ export default function AdminReservationsStatus() {
         @media screen and (min-resolution: 120dpi) { .admin-container, .inline-form-container, .inline-details-container { padding: 0.75rem; } .inline-form { padding: 1rem; } .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); } .cards-grid { grid-template-columns: 1fr; } }
         * { max-width: 100%; box-sizing: border-box; }
         /* ===== Display Options Panel ===== */
-.display-options-panel {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-  border: 1px solid #e2e8f0;
-}
-
-.display-options-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.display-options-header h3 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-}
-
-.reset-all-btn {
-  background: none;
-  border: 1px solid #e2e8f0;
-  padding: 0.3rem 0.8rem;
-  border-radius: 20px;
-  font-size: 0.7rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  transition: all 0.2s;
-}
-
-.reset-all-btn:hover {
-  background: #f1f5f9;
-}
-
-.display-options-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.75rem;
-}
-
-.display-option-item {
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.display-option-label {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.display-option-buttons {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.mode-btn {
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 0.2rem 0.4rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  color: #64748b;
-}
-
-.mode-btn.active {
-  background: #eab308;
-  border-color: #eab308;
-  color: #0f172a;
-}
-
-.mode-btn:hover {
-  background: #f1f5f9;
-}
-
-/* Dark mode overrides (already present in your style block, but add these) */
-@media (prefers-color-scheme: dark) {
-  .display-options-panel {
-    background: #1e293b;
-    border-color: #334155;
-  }
-  .display-option-item {
-    background: #0f172a;
-    border-color: #475569;
-  }
-  .mode-btn {
-    background: #1e293b;
-    border-color: #475569;
-    color: #cbd5e1;
-  }
-  .mode-btn.active {
-    background: #eab308;
-    color: #0f172a;
-  }
-  .reset-all-btn {
-    border-color: #475569;
-    color: #cbd5e1;
-  }
-  .reset-all-btn:hover {
-    background: #334155;
-  }
-}
+        .display-options-panel {
+          background: white;
+          border-radius: 12px;
+          padding: 1.5rem;
+          margin-bottom: 1.5rem;
+          border: 1px solid #e2e8f0;
+        }
+        .display-options-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+        .display-options-header h3 {
+          font-size: 0.95rem;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin: 0;
+        }
+        .reset-all-btn {
+          background: none;
+          border: 1px solid #e2e8f0;
+          padding: 0.3rem 0.8rem;
+          border-radius: 20px;
+          font-size: 0.7rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          transition: all 0.2s;
+        }
+        .reset-all-btn:hover {
+          background: #f1f5f9;
+        }
+        .display-options-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 0.75rem;
+        }
+        .display-option-item {
+          background: #f8fafc;
+          border-radius: 8px;
+          padding: 0.5rem 0.75rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .display-option-label {
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          font-size: 0.75rem;
+          font-weight: 500;
+        }
+        .display-option-buttons {
+          display: flex;
+          gap: 0.25rem;
+        }
+        .mode-btn {
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 4px;
+          padding: 0.2rem 0.4rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s;
+          color: #64748b;
+        }
+        .mode-btn.active {
+          background: #eab308;
+          border-color: #eab308;
+          color: #0f172a;
+        }
+        .mode-btn:hover {
+          background: #f1f5f9;
+        }
+        @media (prefers-color-scheme: dark) {
+          .display-options-panel {
+            background: #1e293b;
+            border-color: #334155;
+          }
+          .display-option-item {
+            background: #0f172a;
+            border-color: #475569;
+          }
+          .mode-btn {
+            background: #1e293b;
+            border-color: #475569;
+            color: #cbd5e1;
+          }
+          .mode-btn.active {
+            background: #eab308;
+            color: #0f172a;
+          }
+          .reset-all-btn {
+            border-color: #475569;
+            color: #cbd5e1;
+          }
+          .reset-all-btn:hover {
+            background: #334155;
+          }
+        }
       `}</style>
     </>
   );

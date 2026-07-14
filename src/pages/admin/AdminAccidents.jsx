@@ -5,7 +5,7 @@ import { AccidentReportPDF } from '../../components/pdf/AccidentReportPDF';
 import { AccidentEstimatePDF } from '../../components/pdf/AccidentEstimatePDF';
 import { AccidentInvoicePDF } from '../../components/pdf/AccidentInvoicePDF';
 import { useDispatch, useSelector } from "react-redux";
-import { useSearchParams } from "react-router-dom"; // <-- ADDED
+import { useSearchParams } from "react-router-dom";
 import {
   fetchAccidents,
   fetchMatricules,
@@ -50,9 +50,8 @@ export default function AdminAccidents() {
   const loading = useSelector(selectAccidentsLoading);
   const token = useSelector(selectToken);
 
-  // URL search params for filtering
-  const [searchParams, setSearchParams] = useSearchParams(); // <-- ADDED
-  const filterParam = searchParams.get('filter'); // <-- ADDED
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterParam = searchParams.get('filter');
 
   // UI state
   const [showAccidentForm, setShowAccidentForm] = useState(false);
@@ -78,25 +77,34 @@ export default function AdminAccidents() {
   const [sortDirection, setSortDirection] = useState("desc");
 
   // ---------- Searchable select states ----------
-  // Matricule
   const [matriculeSearchTerm, setMatriculeSearchTerm] = useState('');
   const [filteredMatriculesList, setFilteredMatriculesList] = useState([]);
   const [selectedMatriculeObj, setSelectedMatriculeObj] = useState(null);
 
-  // Client
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [filteredClientsList, setFilteredClientsList] = useState([]);
   const [selectedClientObj, setSelectedClientObj] = useState(null);
 
-  // Reservation
   const [reservationSearchTerm, setReservationSearchTerm] = useState('');
   const [filteredReservationsList, setFilteredReservationsList] = useState([]);
   const [selectedReservationObj, setSelectedReservationObj] = useState(null);
 
-  // Garage
   const [garageSearchTerm, setGarageSearchTerm] = useState('');
   const [filteredGaragesList, setFilteredGaragesList] = useState([]);
   const [selectedGarageObj, setSelectedGarageObj] = useState(null);
+
+  // ---------- Payment Modal state ----------
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: '',
+    payer: 'client',
+    method: 'cash',
+    reference: '',
+    notes: ''
+  });
+
+  // ---------- Close Confirmation Modal state ----------
+  const [showCloseModal, setShowCloseModal] = useState(false);
 
   const itemsPerPage = 10;
 
@@ -247,7 +255,6 @@ export default function AdminAccidents() {
         (client && `${client.prenom} ${client.nom}`.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesStatus = statusFilter === 'all' || acc.status === statusFilter;
 
-      // Notification filter from URL param
       let matchesNotification = true;
       if (filterParam === 'notifications') {
         const daysSince = (new Date() - new Date(acc.date_accident)) / (1000 * 60 * 60 * 24);
@@ -273,6 +280,78 @@ export default function AdminAccidents() {
 
   const totalPages = Math.ceil(filteredAccidents.length / itemsPerPage);
   const paginatedAccidents = filteredAccidents.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // -------------------- ITEMS MANAGEMENT --------------------
+  // Estimate items
+  const addEstimateItem = () => {
+    setFormData(prev => ({
+      ...prev,
+      estimate_items: [...prev.estimate_items, { name: '', quantity: 1, unit_price: 0 }]
+    }));
+  };
+  const removeEstimateItem = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      estimate_items: prev.estimate_items.filter((_, i) => i !== index)
+    }));
+  };
+  const updateEstimateItem = (index, field, value) => {
+    setFormData(prev => {
+      const items = [...prev.estimate_items];
+      items[index] = { ...items[index], [field]: value };
+      return { ...prev, estimate_items: items };
+    });
+  };
+
+  // Invoice items
+  const addInvoiceItem = () => {
+    setFormData(prev => ({
+      ...prev,
+      invoice_items: [...prev.invoice_items, { name: '', quantity: 1, unit_price: 0 }]
+    }));
+  };
+  const removeInvoiceItem = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      invoice_items: prev.invoice_items.filter((_, i) => i !== index)
+    }));
+  };
+  const updateInvoiceItem = (index, field, value) => {
+    setFormData(prev => {
+      const items = [...prev.invoice_items];
+      items[index] = { ...items[index], [field]: value };
+      return { ...prev, invoice_items: items };
+    });
+  };
+
+  // Recalculate totals when items change (use effect)
+  useEffect(() => {
+    // Estimate totals
+    const estItems = formData.estimate_items || [];
+    const estHT = estItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unit_price || 0), 0);
+    const estTVA = estHT * 0.20; // default 20%
+    const estTTC = estHT + estTVA;
+    setFormData(prev => ({
+      ...prev,
+      estimate_total_ht: estHT,
+      estimate_tva: estTVA,
+      estimate_total_ttc: estTTC
+    }));
+  }, [formData.estimate_items]);
+
+  useEffect(() => {
+    // Invoice totals
+    const invItems = formData.invoice_items || [];
+    const invHT = invItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unit_price || 0), 0);
+    const invTVA = invHT * 0.20;
+    const invTTC = invHT + invTVA;
+    setFormData(prev => ({
+      ...prev,
+      invoice_total_ht: invHT,
+      invoice_tva: invTVA,
+      invoice_total_ttc: invTTC
+    }));
+  }, [formData.invoice_items]);
 
   // Submit handler
   const handleSubmit = async (e) => {
@@ -393,7 +472,6 @@ export default function AdminAccidents() {
     });
 
     // Populate searchable selections
-    // Matricule
     if (acc.matricule_id) {
       const mat = matricules.find(m => m.id === acc.matricule_id);
       if (mat) {
@@ -402,7 +480,6 @@ export default function AdminAccidents() {
         setMatriculeSearchTerm(`${mat.matricule_code} - ${car ? `${car.brand} ${car.model}` : 'N/A'}`);
       }
     }
-    // Client
     if (acc.client_id) {
       const client = clients.find(c => c.id === acc.client_id);
       if (client) {
@@ -410,7 +487,6 @@ export default function AdminAccidents() {
         setClientSearchTerm(`${client.prenom} ${client.nom} - ${client.telephone}`);
       }
     }
-    // Reservation
     if (acc.reservation_id) {
       const res = reservations.find(r => r.id === acc.reservation_id);
       if (res) {
@@ -421,7 +497,6 @@ export default function AdminAccidents() {
         );
       }
     }
-    // Garage
     if (acc.garage_id) {
       const garage = garages.find(g => g.id === acc.garage_id);
       if (garage) {
@@ -536,77 +611,96 @@ export default function AdminAccidents() {
     }
   };
 
-  // Payment handlers
-  const handleAddPayment = () => {
-    const amount = prompt("Montant du paiement (DH) :");
-    if (amount && !isNaN(amount) && parseFloat(amount) > 0) {
-      const payer = confirm("Payer par : OK = Client, Annuler = Assurance") ? "client" : "insurance";
-      const method = prompt("Méthode de paiement (cash, check, bank_transfer) :", "cash");
-      if (method) {
-        const newPayment = {
-          amount: parseFloat(amount),
-          payer: payer,
-          date: new Date().toISOString().slice(0, 10),
-          method: method,
-          reference: prompt("Référence (optionnel) :") || "",
-          notes: prompt("Notes (optionnel) :") || "",
-        };
-        const updatedPayments = [...(formData.payments || []), newPayment];
-        let clientTotal = 0, insuranceTotal = 0;
-        updatedPayments.forEach(p => {
-          if (p.payer === 'client') clientTotal += p.amount;
-          else if (p.payer === 'insurance') insuranceTotal += p.amount;
-        });
-        setFormData({
-          ...formData,
-          payments: updatedPayments,
-          client_paid: clientTotal,
-          insurance_paid: insuranceTotal,
-          total_paid: clientTotal + insuranceTotal,
-          remaining_amount: (formData.total_repair_cost || 0) - (clientTotal + insuranceTotal)
-        });
-        toast.success("Paiement ajouté");
-      }
-    }
+  // ---------- Payment Modal Handlers ----------
+  const openPaymentModal = () => {
+    setPaymentForm({
+      amount: '',
+      payer: 'client',
+      method: 'cash',
+      reference: '',
+      notes: ''
+    });
+    setShowPaymentModal(true);
   };
 
-  const handleCloseAccident = async () => {
-    if (window.confirm("Confirmer la clôture de l'accident ?")) {
-      if (editing) {
-        const result = await dispatch(updateAccident({
-          id: editing.id,
-          data: { ...formData, status: 'closed', closed_at: new Date().toISOString() }
-        }));
-        if (result.error) toast.error(result.payload);
-        else {
-          toast.success("Accident clôturé");
-          dispatch(fetchAccidents(true));
-          setShowAccidentForm(false);
-          setEditing(null);
-          resetForm();
-        }
+  const handlePaymentSubmit = () => {
+    const amount = parseFloat(paymentForm.amount);
+    if (!paymentForm.amount || isNaN(amount) || amount <= 0) {
+      toast.error('Veuillez entrer un montant valide');
+      return;
+    }
+    if (!paymentForm.payer) {
+      toast.error('Veuillez sélectionner un payeur');
+      return;
+    }
+    if (!paymentForm.method) {
+      toast.error('Veuillez sélectionner une méthode de paiement');
+      return;
+    }
+
+    const newPayment = {
+      amount: amount,
+      payer: paymentForm.payer,
+      date: new Date().toISOString().slice(0, 10),
+      method: paymentForm.method,
+      reference: paymentForm.reference || "",
+      notes: paymentForm.notes || "",
+    };
+
+    const updatedPayments = [...(formData.payments || []), newPayment];
+    let clientTotal = 0, insuranceTotal = 0;
+    updatedPayments.forEach(p => {
+      if (p.payer === 'client') clientTotal += p.amount;
+      else if (p.payer === 'insurance') insuranceTotal += p.amount;
+    });
+    setFormData({
+      ...formData,
+      payments: updatedPayments,
+      client_paid: clientTotal,
+      insurance_paid: insuranceTotal,
+      total_paid: clientTotal + insuranceTotal,
+      remaining_amount: (formData.total_repair_cost || 0) - (clientTotal + insuranceTotal)
+    });
+    toast.success("Paiement ajouté");
+    setShowPaymentModal(false);
+  };
+
+  // ---------- Close Modal Handlers ----------
+  const openCloseModal = () => setShowCloseModal(true);
+  const handleCloseConfirm = async () => {
+    if (editing) {
+      const result = await dispatch(updateAccident({
+        id: editing.id,
+        data: { ...formData, status: 'closed', closed_at: new Date().toISOString() }
+      }));
+      if (result.error) toast.error(result.payload);
+      else {
+        toast.success("Accident clôturé");
+        dispatch(fetchAccidents(true));
+        setShowAccidentForm(false);
+        setEditing(null);
+        resetForm();
       }
     }
+    setShowCloseModal(false);
   };
 
   // ---------- Searchable select handlers ----------
-  // AdminAccidents.jsx
-const handleMatriculeSearch = (term) => {
-  setMatriculeSearchTerm(term);
-  if (term.trim() === '') {
-    setFilteredMatriculesList([]);
-    return;
-  }
-  const lower = term.toLowerCase().trim();
-  const filtered = matricules.filter(m => {
-    // ✅ EXCLUDE SOLD MATRICULES
-    if (m.status === 'sold') return false;
-    const car = cars.find(c => c.id === m.car_id);
-    const carStr = car ? `${car.brand} ${car.model}`.toLowerCase() : '';
-    return m.matricule_code.toLowerCase().includes(lower) || carStr.includes(lower);
-  });
-  setFilteredMatriculesList(filtered.slice(0, 10));
-};
+  const handleMatriculeSearch = (term) => {
+    setMatriculeSearchTerm(term);
+    if (term.trim() === '') {
+      setFilteredMatriculesList([]);
+      return;
+    }
+    const lower = term.toLowerCase().trim();
+    const filtered = matricules.filter(m => {
+      if (m.status === 'sold') return false;
+      const car = cars.find(c => c.id === m.car_id);
+      const carStr = car ? `${car.brand} ${car.model}`.toLowerCase() : '';
+      return m.matricule_code.toLowerCase().includes(lower) || carStr.includes(lower);
+    });
+    setFilteredMatriculesList(filtered.slice(0, 10));
+  };
 
   const handleMatriculeSelect = (mat) => {
     setSelectedMatriculeObj(mat);
@@ -618,7 +712,6 @@ const handleMatriculeSearch = (term) => {
       car_id: mat.car_id || '',
     }));
     setFilteredMatriculesList([]);
-    // Reset reservation selection when matricule changes
     setSelectedReservationObj(null);
     setReservationSearchTerm('');
     setFilteredReservationsList([]);
@@ -665,7 +758,6 @@ const handleMatriculeSearch = (term) => {
       setFilteredReservationsList([]);
       return;
     }
-    // Filter by selected matricule if any, otherwise show all (or empty)
     let baseReservations = reservations;
     if (formData.matricule_id) {
       baseReservations = reservations.filter(r => r.matricule_id === parseInt(formData.matricule_id));
@@ -695,10 +787,9 @@ const handleMatriculeSearch = (term) => {
     setFormData(prev => ({
       ...prev,
       reservation_id: res.id,
-      client_id: res.client_id, // also auto-fill client
+      client_id: res.client_id,
     }));
     setFilteredReservationsList([]);
-    // Also auto-select client if not set
     if (!selectedClientObj) {
       const client = clients.find(c => c.id === res.client_id);
       if (client) {
@@ -796,42 +887,42 @@ const handleMatriculeSearch = (term) => {
             </div>
 
             {filteredMatriculesList.length > 0 && (
-  <div className="inline-results">
-    {filteredMatriculesList.map(mat => {
-      const car = cars.find(c => c.id === mat.car_id);
-      return (
-        <div key={mat.id} className="inline-result-item" onClick={() => handleMatriculeSelect(mat)}>
-          <div className="inline-result-avatar"><Car size={20} /></div>
-          <div className="inline-result-info">
-            <strong>{mat.matricule_code}</strong>
-            <div className="inline-result-details">
-              <span>{car ? `${car.brand} ${car.model} (${car.year})` : 'N/A'}</span>
-              <span>{mat.kilometrage?.toLocaleString()} km</span>
-              <span className={`badge ${mat.status === 'active' ? 'badge-success' : 'badge-danger'}`}>
-                {mat.status === 'active' ? 'Actif' : 'Inactif'}
-              </span>
-            </div>
-          </div>
-        </div>
-      );
-    })}
-  </div>
-)}
+              <div className="inline-results">
+                {filteredMatriculesList.map(mat => {
+                  const car = cars.find(c => c.id === mat.car_id);
+                  return (
+                    <div key={mat.id} className="inline-result-item" onClick={() => handleMatriculeSelect(mat)}>
+                      <div className="inline-result-avatar"><Car size={20} /></div>
+                      <div className="inline-result-info">
+                        <strong>{mat.matricule_code}</strong>
+                        <div className="inline-result-details">
+                          <span>{car ? `${car.brand} ${car.model} (${car.year})` : 'N/A'}</span>
+                          <span>{mat.kilometrage?.toLocaleString()} km</span>
+                          <span className={`badge ${mat.status === 'active' ? 'badge-success' : 'badge-danger'}`}>
+                            {mat.status === 'active' ? 'Actif' : 'Inactif'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {selectedMatriculeObj && (
-  <div className="inline-selected">
-    <CheckCircle size={20} />
-    <div>
-      <strong>Matricule sélectionné</strong>
-      <p>
-        {selectedMatriculeObj.matricule_code} - {cars.find(c => c.id === selectedMatriculeObj.car_id)?.brand} {cars.find(c => c.id === selectedMatriculeObj.car_id)?.model} ({selectedMatriculeObj.kilometrage?.toLocaleString()} km)
-        <span className={`badge ${selectedMatriculeObj.status === 'active' ? 'badge-success' : 'badge-danger'}`} style={{ marginLeft: '8px' }}>
-          {selectedMatriculeObj.status === 'active' ? 'Actif' : 'Inactif'}
-        </span>
-      </p>
-    </div>
-  </div>
-)}
+              <div className="inline-selected">
+                <CheckCircle size={20} />
+                <div>
+                  <strong>Matricule sélectionné</strong>
+                  <p>
+                    {selectedMatriculeObj.matricule_code} - {cars.find(c => c.id === selectedMatriculeObj.car_id)?.brand} {cars.find(c => c.id === selectedMatriculeObj.car_id)?.model} ({selectedMatriculeObj.kilometrage?.toLocaleString()} km)
+                    <span className={`badge ${selectedMatriculeObj.status === 'active' ? 'badge-success' : 'badge-danger'}`} style={{ marginLeft: '8px' }}>
+                      {selectedMatriculeObj.status === 'active' ? 'Actif' : 'Inactif'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            )}
 
             {!selectedMatriculeObj && matriculeSearchTerm.trim() !== "" && filteredMatriculesList.length === 0 && (
               <div className="inline-no-results">Aucun matricule trouvé.</div>
@@ -1001,7 +1092,6 @@ const handleMatriculeSearch = (term) => {
   const renderGarageInspection = () => (
     <div className="step-content">
       <div className="inline-grid-2">
-        {/* Garage - searchable */}
         <div className="inline-field" style={{ gridColumn: "1 / -1" }}>
           <label>Garage</label>
           <div className="inline-search-section">
@@ -1119,59 +1209,96 @@ const handleMatriculeSearch = (term) => {
             className="inline-input"
           />
         </div>
-        <div className="inline-field">
-          <label>Total HT (DH)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={formData.estimate_total_ht}
-            onChange={(e) => setFormData({...formData, estimate_total_ht: parseFloat(e.target.value) || 0})}
-            className="inline-input"
-          />
-        </div>
-        <div className="inline-field">
-          <label>TVA (DH)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={formData.estimate_tva}
-            onChange={(e) => setFormData({...formData, estimate_tva: parseFloat(e.target.value) || 0})}
-            className="inline-input"
-          />
-        </div>
-        <div className="inline-field">
-          <label>Total TTC (DH)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={formData.estimate_total_ttc}
-            onChange={(e) => setFormData({...formData, estimate_total_ttc: parseFloat(e.target.value) || 0})}
-            className="inline-input"
-          />
-        </div>
         <div className="inline-field" style={{ gridColumn: "1 / -1" }}>
-          <label>Items du devis (JSON)</label>
-          <textarea
-            rows="4"
-            value={safeStringify(formData.estimate_items)}
-            onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value);
-                if (Array.isArray(parsed)) {
-                  setFormData({...formData, estimate_items: parsed });
-                } else {
-                  toast.warning('Le format doit être un tableau d\'objets');
-                }
-              } catch (err) {
-                // ignore invalid JSON
-              }
-            }}
-            className="inline-textarea"
-            placeholder='[{"name":"Pièce exemple","quantity":1,"unit_price":100}]'
-          />
-          <small style={{ color: '#64748b', fontSize: '0.7rem' }}>
-            Format: {"{\"name\":\"Nom\",\"quantity\":1,\"unit_price\":100}"}
-          </small>
+          <label>Articles du devis</label>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+            {formData.estimate_items.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#64748b', padding: '10px' }}>Aucun article</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ padding: '6px', textAlign: 'left' }}>Nom</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '80px' }}>Qté</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '100px' }}>Prix unit.</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '100px' }}>Total</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '40px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {formData.estimate_items.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px' }}>
+                        <input
+                          type="text"
+                          value={item.name || ''}
+                          onChange={(e) => updateEstimateItem(idx, 'name', e.target.value)}
+                          placeholder="Nom de l'article"
+                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                        />
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={item.quantity || 1}
+                          onChange={(e) => updateEstimateItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                          style={{ width: '60px', padding: '4px 6px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                        />
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unit_price || 0}
+                          onChange={(e) => updateEstimateItem(idx, 'unit_price', parseFloat(e.target.value) || 0)}
+                          style={{ width: '80px', padding: '4px 6px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                        />
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>
+                        {(item.quantity || 0) * (item.unit_price || 0)} DH
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => removeEstimateItem(idx)}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                        >
+                          <X size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid #0f172a' }}>
+                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total HT</td>
+                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.estimate_total_ht} DH</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>TVA (20%)</td>
+                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.estimate_tva} DH</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total TTC</td>
+                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.estimate_total_ttc} DH</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+            <button
+              type="button"
+              onClick={addEstimateItem}
+              style={{ marginTop: '8px', padding: '6px 12px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              <Plus size={16} /> Ajouter un article
+            </button>
+          </div>
         </div>
         <div className="inline-field" style={{ gridColumn: "1 / -1", display: "flex", gap: "10px" }}>
           <button
@@ -1261,59 +1388,96 @@ const handleMatriculeSearch = (term) => {
             placeholder="FACT-2026-001"
           />
         </div>
-        <div className="inline-field">
-          <label>Total HT (DH)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={formData.invoice_total_ht}
-            onChange={(e) => setFormData({...formData, invoice_total_ht: parseFloat(e.target.value) || 0})}
-            className="inline-input"
-          />
-        </div>
-        <div className="inline-field">
-          <label>TVA (DH)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={formData.invoice_tva}
-            onChange={(e) => setFormData({...formData, invoice_tva: parseFloat(e.target.value) || 0})}
-            className="inline-input"
-          />
-        </div>
-        <div className="inline-field">
-          <label>Total TTC (DH)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={formData.invoice_total_ttc}
-            onChange={(e) => setFormData({...formData, invoice_total_ttc: parseFloat(e.target.value) || 0})}
-            className="inline-input"
-          />
-        </div>
         <div className="inline-field" style={{ gridColumn: "1 / -1" }}>
-          <label>Items facture (JSON)</label>
-          <textarea
-            rows="4"
-            value={safeStringify(formData.invoice_items)}
-            onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value);
-                if (Array.isArray(parsed)) {
-                  setFormData({...formData, invoice_items: parsed });
-                } else {
-                  toast.warning('Le format doit être un tableau d\'objets');
-                }
-              } catch (err) {
-                // ignore invalid JSON
-              }
-            }}
-            className="inline-textarea"
-            placeholder='[{"name":"Réparation carrosserie","quantity":1,"unit_price":1500}]'
-          />
-          <small style={{ color: '#64748b', fontSize: '0.7rem' }}>
-            Format: {"{\"name\":\"Nom\",\"quantity\":1,\"unit_price\":100}"}
-          </small>
+          <label>Articles de la facture</label>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+            {formData.invoice_items.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#64748b', padding: '10px' }}>Aucun article</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ padding: '6px', textAlign: 'left' }}>Nom</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '80px' }}>Qté</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '100px' }}>Prix unit.</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '100px' }}>Total</th>
+                    <th style={{ padding: '6px', textAlign: 'center', width: '40px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {formData.invoice_items.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px' }}>
+                        <input
+                          type="text"
+                          value={item.name || ''}
+                          onChange={(e) => updateInvoiceItem(idx, 'name', e.target.value)}
+                          placeholder="Nom de l'article"
+                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                        />
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={item.quantity || 1}
+                          onChange={(e) => updateInvoiceItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                          style={{ width: '60px', padding: '4px 6px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                        />
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unit_price || 0}
+                          onChange={(e) => updateInvoiceItem(idx, 'unit_price', parseFloat(e.target.value) || 0)}
+                          style={{ width: '80px', padding: '4px 6px', border: '1px solid #e2e8f0', borderRadius: '4px' }}
+                        />
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>
+                        {(item.quantity || 0) * (item.unit_price || 0)} DH
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => removeInvoiceItem(idx)}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                        >
+                          <X size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid #0f172a' }}>
+                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total HT</td>
+                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.invoice_total_ht} DH</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>TVA (20%)</td>
+                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.invoice_tva} DH</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total TTC</td>
+                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.invoice_total_ttc} DH</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+            <button
+              type="button"
+              onClick={addInvoiceItem}
+              style={{ marginTop: '8px', padding: '6px 12px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              <Plus size={16} /> Ajouter un article
+            </button>
+          </div>
         </div>
         <div className="inline-field" style={{ gridColumn: "1 / -1", display: "flex", gap: "10px" }}>
           <button
@@ -1347,7 +1511,7 @@ const handleMatriculeSearch = (term) => {
         <div className="inline-field" style={{ gridColumn: "1 / -1" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
             <label style={{ fontWeight: "bold" }}>Paiements enregistrés</label>
-            <button type="button" className="inline-secondary-btn" onClick={handleAddPayment}>
+            <button type="button" className="inline-secondary-btn" onClick={openPaymentModal}>
               <Plus size={16} /> Ajouter un paiement
             </button>
           </div>
@@ -1390,14 +1554,14 @@ const handleMatriculeSearch = (term) => {
                   <tr>
                     <td colSpan="3" style={{ padding: "8px", textAlign: "right" }}>Total payé:</td>
                     <td style={{ padding: "8px", textAlign: "right" }}>
-                      {formData.total_paid.toFixed(2)} DH
+                      {(Number(formData.total_paid) || 0).toFixed(2)} DH
                     </td>
                     <td></td>
                   </tr>
                   <tr>
                     <td colSpan="3" style={{ padding: "8px", textAlign: "right" }}>Reste à payer:</td>
                     <td style={{ padding: "8px", textAlign: "right", color: "#dc2626" }}>
-                      {formData.remaining_amount.toFixed(2)} DH
+                      {(Number(formData.remaining_amount) || 0).toFixed(2)} DH
                     </td>
                     <td></td>
                   </tr>
@@ -1476,7 +1640,7 @@ const handleMatriculeSearch = (term) => {
               <Printer size={16} /> Aperçu Rapport
             </button>
             {remaining <= 0 && formData.status !== 'closed' && (
-              <button type="button" className="btn-delete" onClick={handleCloseAccident} style={{ padding: "10px 20px", borderRadius: "40px" }}>
+              <button type="button" className="btn-delete" onClick={openCloseModal} style={{ padding: "10px 20px", borderRadius: "40px" }}>
                 <CheckSquare size={16} /> Clôturer l'accident
               </button>
             )}
@@ -1711,6 +1875,107 @@ const handleMatriculeSearch = (term) => {
                 {documentPreviewType === 'estimate' && <AccidentEstimatePDF accident={documentPreviewAccident} />}
                 {documentPreviewType === 'invoice' && <AccidentInvoicePDF accident={documentPreviewAccident} />}
               </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- PAYMENT MODAL ---------- */}
+      {showPaymentModal && (
+        <div className="modal-overlay" onClick={() => setShowPaymentModal(false)}>
+          <div className="payment-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="payment-modal-header">
+              <h3><Wallet size={20} /> Ajouter un paiement</h3>
+              <button className="payment-modal-close" onClick={() => setShowPaymentModal(false)}><X size={20} /></button>
+            </div>
+            <div className="payment-modal-body">
+              <div className="payment-form-group">
+                <label>Montant (DH) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={paymentForm.amount}
+                  onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
+                  placeholder="0.00"
+                  className="payment-input"
+                />
+              </div>
+              <div className="payment-form-group">
+                <label>Payeur *</label>
+                <div className="payment-radio-group">
+                  <label className="payment-radio-label">
+                    <input
+                      type="radio"
+                      value="client"
+                      checked={paymentForm.payer === 'client'}
+                      onChange={() => setPaymentForm({...paymentForm, payer: 'client'})}
+                    /> Client
+                  </label>
+                  <label className="payment-radio-label">
+                    <input
+                      type="radio"
+                      value="insurance"
+                      checked={paymentForm.payer === 'insurance'}
+                      onChange={() => setPaymentForm({...paymentForm, payer: 'insurance'})}
+                    /> Assurance
+                  </label>
+                </div>
+              </div>
+              <div className="payment-form-group">
+                <label>Méthode *</label>
+                <select
+                  value={paymentForm.method}
+                  onChange={(e) => setPaymentForm({...paymentForm, method: e.target.value})}
+                  className="payment-select"
+                >
+                  <option value="cash">Espèces</option>
+                  <option value="check">Chèque</option>
+                  <option value="bank_transfer">Virement</option>
+                </select>
+              </div>
+              <div className="payment-form-group">
+                <label>Référence (optionnel)</label>
+                <input
+                  type="text"
+                  value={paymentForm.reference}
+                  onChange={(e) => setPaymentForm({...paymentForm, reference: e.target.value})}
+                  placeholder="N° chèque, virement..."
+                  className="payment-input"
+                />
+              </div>
+              <div className="payment-form-group">
+                <label>Notes (optionnel)</label>
+                <textarea
+                  value={paymentForm.notes}
+                  onChange={(e) => setPaymentForm({...paymentForm, notes: e.target.value})}
+                  placeholder="Commentaires..."
+                  className="payment-textarea"
+                  rows="2"
+                />
+              </div>
+            </div>
+            <div className="payment-modal-footer">
+              <button className="modal-btn modal-btn-cancel" onClick={() => setShowPaymentModal(false)}>Annuler</button>
+              <button className="modal-btn btn-primary" onClick={handlePaymentSubmit}>Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- CLOSE CONFIRMATION MODAL ---------- */}
+      {showCloseModal && (
+        <div className="modal-overlay" onClick={() => setShowCloseModal(false)}>
+          <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-icon"><CheckSquare size={32} /></div>
+            <h3 className="delete-title">Confirmer la clôture</h3>
+            <p className="delete-message">
+              Êtes-vous sûr de vouloir clôturer cet accident ?<br />
+              Une fois clôturé, vous ne pourrez plus modifier les informations.
+            </p>
+            <div className="delete-actions">
+              <button onClick={() => setShowCloseModal(false)} className="modal-btn modal-btn-cancel">Annuler</button>
+              <button onClick={handleCloseConfirm} className="modal-btn btn-delete">Clôturer</button>
             </div>
           </div>
         </div>
@@ -2197,6 +2462,78 @@ const handleMatriculeSearch = (term) => {
           min-height: 0;
         }
 
+        /* Payment Modal */
+        .payment-modal {
+          background: white;
+          border-radius: 24px;
+          max-width: 480px;
+          width: 100%;
+          padding: 1.5rem;
+          animation: slideUp 0.3s ease;
+          box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+        }
+        .payment-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1.5rem;
+        }
+        .payment-modal-header h3 {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+        .payment-modal-close {
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: #64748b;
+          padding: 4px;
+        }
+        .payment-modal-close:hover { color: #0f172a; }
+        .payment-form-group { margin-bottom: 1rem; }
+        .payment-form-group label {
+          display: block;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #475569;
+          margin-bottom: 0.25rem;
+        }
+        .payment-input, .payment-select, .payment-textarea {
+          width: 100%;
+          padding: 8px 12px;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          font-size: 0.875rem;
+          transition: border-color 0.2s;
+        }
+        .payment-input:focus, .payment-select:focus, .payment-textarea:focus {
+          outline: none;
+          border-color: #eab308;
+          box-shadow: 0 0 0 3px rgba(234,179,8,0.1);
+        }
+        .payment-radio-group {
+          display: flex;
+          gap: 1rem;
+        }
+        .payment-radio-label {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 0.875rem;
+          cursor: pointer;
+        }
+        .payment-modal-footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 0.75rem;
+          margin-top: 1.5rem;
+          padding-top: 1rem;
+          border-top: 1px solid #e2e8f0;
+        }
+
         /* Delete Modal */
         .modal-overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -2243,17 +2580,18 @@ const handleMatriculeSearch = (term) => {
           .document-preview-header { padding: 1rem; flex-wrap: wrap; }
           .document-preview-title h2 { font-size: 1rem; }
           .document-preview-body { padding: 0.5rem; }
+          .payment-modal { max-width: 95vw; margin: 1rem; }
         }
 
         /* Dark mode support */
         @media (prefers-color-scheme: dark) {
           body { background: #0f172a; }
-          .stat-card, .table-wrapper, .search-wrapper, .inline-form-container, .inline-details-container, .delete-modal, .document-preview-modal { background: #1e293b; border-color: #334155; }
+          .stat-card, .table-wrapper, .search-wrapper, .inline-form-container, .inline-details-container, .delete-modal, .document-preview-modal, .payment-modal { background: #1e293b; border-color: #334155; }
           .stat-label, .table-info-text, .table th, .subtitle, .info-label, .delete-message, .document-preview-title h2 { color: #94a3b8; }
           .title { background: linear-gradient(135deg, #f1f5f9, #94a3b8); background-clip: text; -webkit-background-clip: text; }
           .btn-secondary, .btn-secondary-full, .back-btn { background: #334155; color: #e2e8f0; }
           .btn-secondary:hover, .btn-secondary-full:hover, .back-btn:hover { background: #475569; }
-          .search-input, .filter-select, .inline-input, .inline-select, .inline-textarea { background: #0f172a; border-color: #334155; color: #f1f5f9; }
+          .search-input, .filter-select, .inline-input, .inline-select, .inline-textarea, .payment-input, .payment-select, .payment-textarea { background: #0f172a; border-color: #334155; color: #f1f5f9; }
           .inline-search-section { background: #0f172a; border-color: #334155; }
           .inline-results { background: #0f172a; border-color: #334155; }
           .inline-result-item { border-bottom-color: #334155; }
@@ -2302,6 +2640,11 @@ const handleMatriculeSearch = (term) => {
           .filter-indicator-text { color: #fde68a; }
           .clear-filter-btn { border-color: #fde68a; color: #fde68a; }
           .clear-filter-btn:hover { background: #fde68a; color: #1e293b; }
+          .payment-modal-header h3 { color: #f1f5f9; }
+          .payment-form-group label { color: #94a3b8; }
+          .payment-modal-footer { border-top-color: #334155; }
+          .modal-btn-cancel { border-color: #475569; background: #1e293b; color: #e2e8f0; }
+          .modal-btn-cancel:hover { background: #334155; }
         }
       `}</style>
     </>
