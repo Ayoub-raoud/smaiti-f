@@ -338,7 +338,7 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
                 <tbody>
                   <tr>
                     <td style={{ width: "30%", verticalAlign: "top" }}>
-                      <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>OULFA DRIVE</div>
+                      <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>SMAITI CAR</div>
                       <div className="company-slogan" style={{ fontSize: "10px", fontWeight: 600, marginTop: "4px", color: "#b8860b" }}>LOCATION DE VOITURE</div>
                       <div className="company-phone" style={{ fontSize: "9px", marginTop: "6px", color: "#475569" }}>📞 0665 921 921</div>
                     </td>
@@ -499,7 +499,7 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
             )}
 
             <div className="report-paper-footer">
-              <span>OULFA DRIVE — Document généré informatiquement.</span>
+              <span>SMAITI CAR — Document généré informatiquement.</span>
             </div>
           </div>
 
@@ -518,7 +518,7 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
                   <tbody>
                     <tr>
                       <td style={{ width: "30%", verticalAlign: "top" }}>
-                        <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>OULFA DRIVE</div>
+                        <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>SMAITI CAR</div>
                         <div className="company-slogan" style={{ fontSize: "10px", fontWeight: 600, marginTop: "4px", color: "#b8860b" }}>LOCATION DE VOITURE</div>
                         <div className="company-phone" style={{ fontSize: "9px", marginTop: "6px", color: "#475569" }}>📞 0665 921 921</div>
                       </td>
@@ -572,7 +572,7 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
                 </div>
               )}
               <div className="report-paper-footer">
-                <span>OULFA DRIVE — Document généré informatiquement.</span>
+                <span>SMAITI CAR — Document généré informatiquement.</span>
               </div>
             </div>
           </div>
@@ -902,7 +902,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
                 <tbody>
                   <tr>
                     <td style={{ width: "30%", verticalAlign: "top" }}>
-                      <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>OULFA DRIVE</div>
+                      <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>SMAITI CAR</div>
                       <div className="company-slogan" style={{ fontSize: "10px", fontWeight: 600, marginTop: "4px", color: "#b8860b" }}>LOCATION DE VOITURE</div>
                       <div className="company-phone" style={{ fontSize: "9px", marginTop: "6px", color: "#475569" }}>📞 0665 921 921</div>
                     </td>
@@ -1066,7 +1066,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
             )}
 
             <div className="report-paper-footer">
-              <span>OULFA DRIVE — Document généré informatiquement.</span>
+              <span>SMAITI CAR — Document généré informatiquement.</span>
             </div>
           </div>
 
@@ -1084,7 +1084,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
                   <tbody>
                     <tr>
                       <td style={{ width: "30%", verticalAlign: "top" }}>
-                        <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>OULFA DRIVE</div>
+                        <div className="company-name" style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "2px", color: "#1e293b" }}>SMAITI CAR</div>
                         <div className="company-slogan" style={{ fontSize: "10px", fontWeight: 600, marginTop: "4px", color: "#b8860b" }}>LOCATION DE VOITURE</div>
                         <div className="company-phone" style={{ fontSize: "9px", marginTop: "6px", color: "#475569" }}>📞 0665 921 921</div>
                       </td>
@@ -1136,7 +1136,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
                 </div>
               )}
               <div className="report-paper-footer">
-                <span>OULFA DRIVE — Document généré informatiquement.</span>
+                <span>SMAITI CAR — Document généré informatiquement.</span>
               </div>
             </div>
           </div>
@@ -1308,7 +1308,7 @@ const SavedReportsSection = ({ onEditReport, refreshTrigger }) => {
     // Pied de page
     doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
-    doc.text('OULFA DRIVE — Document généré informatiquement.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+    doc.text('SMAITI CAR — Document généré informatiquement.', pageWidth / 2, pageHeight - 10, { align: 'center' });
 
     const pdfBlob = doc.output('blob');
     const url = URL.createObjectURL(pdfBlob);
@@ -1626,7 +1626,7 @@ const ManualContract = ({ formData, signatures, paperwork, displayOptions, curre
           <div className="phone-number">0665 921 921</div>
         </div>
         <div className="header-center">
-          <img src={logoImage} alt="OULFA DRIVE Logo" className="company-logo" onError={(e) => (e.target.style.display = "none")} />
+          <img src={logoImage} alt="SMAITI CAR Logo" className="company-logo" onError={(e) => (e.target.style.display = "none")} />
         </div>
         <div className="header-right">
           <div className="arabic-text">كراء السيارات</div>
@@ -1873,8 +1873,8 @@ const ManualContract = ({ formData, signatures, paperwork, displayOptions, curre
       </section>
 
       <footer className="contract-footer">
-        OULFA DRIVE SARL AU CAPITAL 100 000.00 DH SIEGE SOCIAL: BASSATINE AL OULFA GH 3 IMMEUBLE 14 N°56 AL OULFA – CASABLANCA<br />
-        RC: 580419-IF: 53743931 -TP: 35007229 ICE: 003274706000087 -TEL: 0665 92 19 21 / 0660 47 28 40 - EMAIL: OULFADRIVE@GMAIL.COM
+        SMAITI CAR SARL AU CAPITAL 100 000.00 DH SIEGE SOCIAL: BASSATINE AL OULFA GH 3 IMMEUBLE 14 N°56 AL OULFA – CASABLANCA<br />
+        RC : 459659 - IF : 45640901 - TP : 30351369 - ICE : 002464789000069 - CNSS : 2473901 -TEL: 0665 92 19 21 / 0660 47 28 40 - EMAIL: SMAITICAR2@GMAIL.COM
       </footer>
     </div>
   );

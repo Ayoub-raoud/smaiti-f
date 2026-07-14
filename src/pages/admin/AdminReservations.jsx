@@ -268,7 +268,7 @@ const ContractLocation = ({
         <tbody>
           <tr>
             <td className="header-left">
-              <div className="company-name">OULFA DRIVE</div>
+              <div className="company-name">SMAITI CAR</div>
               <div className="company-slogan">LOCATION DE VOITURE</div>
               <div className="company-phone"><Phone size={12} style={{ marginRight: "4px", display: "inline" }} /> 0665 921 921</div>
             </td>
@@ -490,10 +490,10 @@ const ContractLocation = ({
       <div className="contract-footer-print">
         <div className="footer-line">
           <span style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
-            <Building2 size={8} /> OULFA DRIVE SARL - Capital 100 000 DH
+            <Building2 size={8} /> SMAITI CAR SARL - Capital 100 000 DH
           </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", marginLeft: "6px" }}>
-            <FileCheck size={8} /> RC: 580419 - ICE: 003274706000087
+            <FileCheck size={8} /> RC : 459659 - IF : 45640901 - TP : 30351369 - ICE : 002464789000069 - CNSS : 2473901
           </span>
         </div>
         <div className="footer-line">
@@ -504,7 +504,7 @@ const ContractLocation = ({
             <Phone size={8} /> 0665 92 19 21
           </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", marginLeft: "6px" }}>
-            <Mail size={8} /> oulfadrive@gmail.com
+            <Mail size={8} /> smaiticar2@gmail.com
           </span>
         </div>
       </div>
