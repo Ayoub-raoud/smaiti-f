@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   },
 });
 
-// Helper functions
+// Helper functions (unchanged except sanitize)
 const getNormalizedDate = (item) => {
   let dateStr = item.date || item.dueDate || item.endDate || null;
   if (dateStr) {
@@ -129,9 +129,10 @@ const getStatusLabel = (item) => {
   return '—';
 };
 
-// Remove XML-invalid characters (safer for PDF generation)
+// Keep only necessary sanitization (remove XML-invalid chars)
 const sanitizeText = (text) => {
   if (typeof text !== 'string') return String(text || '—');
+  // Only replace characters that are invalid in XML
   return text.replace(/[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD]/g, '');
 };
 
@@ -219,7 +220,7 @@ export const NotificationsPDF = ({ notifications = [], filterDescription = '', c
     );
   }
 
-  // Normal mode (group by date)
+  // Normal mode
   const grouped = notifications.reduce((acc, item) => {
     const dateKey = getNormalizedDate(item) || 'sans_date';
     if (!acc[dateKey]) acc[dateKey] = [];
@@ -278,6 +279,3 @@ export const NotificationsPDF = ({ notifications = [], filterDescription = '', c
     </Document>
   );
 };
-
-// ✅ ADDED DEFAULT EXPORT to support both named and default imports
-export default NotificationsPDF;
