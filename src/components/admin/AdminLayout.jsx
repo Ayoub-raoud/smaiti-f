@@ -32,7 +32,7 @@ import {
 import { NavLink } from "../../components/ui/navlink";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import NotificationBell from "../../pages/admin/NotificationBell"; // ✅ default import
+import { NotificationBell } from "../../pages/admin/NotificationBell"; // ✅ named import
 
 // Default pages per role (no permission check required)
 const DEFAULT_PAGES = {
@@ -81,7 +81,6 @@ export default function AdminLayout() {
     };
   };
 
-  // ✅ FIX: Fetch permissions for both employees AND admins (but not superadmins)
   useEffect(() => {
     if (isAuthenticated && user?.role !== 'superadmin') {
       dispatch(fetchMyPermissions());
@@ -128,32 +127,22 @@ export default function AdminLayout() {
     { path: "/profile", icon: UserCircle, label: "Mon Profil", pageSlug: null },
   ];
 
-  // Add Users page for admin and superadmin only (but admin has it by default)
   if (user?.role === 'admin' || user?.role === 'superadmin') {
     allNavItems.push({ path: "/users", icon: UserCog, label: "Utilisateurs", pageSlug: "users" });
   }
 
-  // ---- FILTERING LOGIC ----
   const userRole = user?.role;
   const isSuperAdmin = userRole === 'superadmin';
 
   const navItems = allNavItems.filter(item => {
     const pageSlug = item.pageSlug;
-
-    // Dashboard and Profile have no pageSlug – always shown (if in the list)
     if (!pageSlug) {
       return ['/dashboard', '/profile'].includes(item.path);
     }
-
-    // Superadmin sees everything
     if (isSuperAdmin) return true;
-
-    // Check if this page is in the user's default set
     if (DEFAULT_PAGES[userRole]?.includes(pageSlug)) {
       return true;
     }
-
-    // Otherwise, check for explicit permission
     let hasPerm = false;
     if (Array.isArray(myPermissions)) {
       if (myPermissions.length > 0 && typeof myPermissions[0] === 'object') {
