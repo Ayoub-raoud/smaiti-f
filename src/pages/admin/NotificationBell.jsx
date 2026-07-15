@@ -279,3 +279,4 @@ export const NotificationsPDF = ({ notifications = [], filterDescription = '', c
     </Document>
   );
 };
+export default NotificationBell;
