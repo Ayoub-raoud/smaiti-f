@@ -32,7 +32,7 @@ import {
 import { NavLink } from "../../components/ui/navlink";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import {NotificationBell} from "../../pages/admin/NotificationBell";
+import NotificationBell from "../../pages/admin/NotificationBell"; // ✅ default import
 
 // Default pages per role (no permission check required)
 const DEFAULT_PAGES = {
