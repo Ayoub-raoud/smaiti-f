@@ -9,6 +9,7 @@ import {
   fetchContactsCount,
   fetchRecentContacts,
 } from "../../Redux/store";
+import PaginationControls from '../../components/PaginationControls';
 import { toast } from "sonner";
 import {
   Trash2, Eye, Search, RefreshCw, ChevronLeft, ChevronRight,
@@ -34,8 +35,7 @@ export default function AdminContacts() {
   const [sortField, setSortField] = useState("id");
   const [sortDirection, setSortDirection] = useState("desc");
 
-  const itemsPerPage = 10;
-
+const [itemsPerPage, setItemsPerPage] = useState(10);
   // Load contacts
   useEffect(() => {
     dispatch(fetchContacts());
@@ -330,39 +330,15 @@ export default function AdminContacts() {
             </table>
           </div>
           {totalPages > 1 && (
-            <div className="pagination">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="page-btn"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                let pageNum = i + 1;
-                if (totalPages > 5 && currentPage > 3) {
-                  pageNum = currentPage - 3 + i;
-                  if (pageNum > totalPages) return null;
-                }
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`page-btn ${currentPage === pageNum ? "active" : ""}`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="page-btn"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredContacts.length}
+  />
+)}
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import { pdf, PDFViewer } from '@react-pdf/renderer';
 import { AccidentReportPDF } from '../../components/pdf/AccidentReportPDF';
 import { AccidentEstimatePDF } from '../../components/pdf/AccidentEstimatePDF';
 import { AccidentInvoicePDF } from '../../components/pdf/AccidentInvoicePDF';
+import PaginationControls from '../../components/PaginationControls';
 import { useDispatch, useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -106,7 +107,7 @@ export default function AdminAccidents() {
   // ---------- Close Confirmation Modal state ----------
   const [showCloseModal, setShowCloseModal] = useState(false);
 
-  const itemsPerPage = 10;
+ const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Helper function pour formater les items en toute sécurité
   const safeStringify = (items) => {
@@ -2112,19 +2113,15 @@ export default function AdminAccidents() {
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="pagination">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1} className="page-btn"><ChevronLeft size={16} /></button>
-                {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                  let pageNum = i + 1;
-                  if (totalPages > 5 && currentPage > 3) {
-                    pageNum = currentPage - 3 + i;
-                    if (pageNum > totalPages) return null;
-                  }
-                  return <button key={i} onClick={() => setCurrentPage(pageNum)} className={`page-btn ${currentPage === pageNum ? 'active' : ''}`}>{pageNum}</button>;
-                })}
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages} className="page-btn"><ChevronRight size={16} /></button>
-              </div>
-            )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredAccidents.length}
+  />
+)}
           </div>
         </div>
       )}

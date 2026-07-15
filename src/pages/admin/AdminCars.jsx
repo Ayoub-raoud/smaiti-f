@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchCars, createCar, updateCar, deleteCar, selectCars, selectCarsLoading, fetchMatricules, selectMatricules } from "../../Redux/store";
+import PaginationControls from '../../components/PaginationControls';
 import { toast } from "sonner";
 import { 
   Plus, Edit2, Trash2, X, Search, RefreshCw, Car, Palette, DollarSign, 
@@ -34,8 +35,8 @@ export default function AdminCars() {
   const [sortField, setSortField] = useState("id");
   const [sortDirection, setSortDirection] = useState("desc");
   
-  const itemsPerPage = 10;
-  const cardsPerPage = 12;
+  const [listItemsPerPage, setListItemsPerPage] = useState(10);
+const [cardsItemsPerPage, setCardsItemsPerPage] = useState(12);
   
   const [formData, setFormData] = useState({
     brand: "",
@@ -140,7 +141,7 @@ export default function AdminCars() {
     }
   });
 
-  const itemsPerView = viewMode === 'list' ? itemsPerPage : cardsPerPage;
+const itemsPerView = viewMode === 'list' ? listItemsPerPage : cardsItemsPerPage;
   const totalPages = Math.ceil(filteredCars.length / itemsPerView);
   const paginatedCars = filteredCars.slice((currentPage - 1) * itemsPerView, currentPage * itemsPerView);
 
@@ -724,19 +725,15 @@ export default function AdminCars() {
                 </table>
               </div>
               {totalPages > 1 && (
-                <div className="pagination">
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1} className="page-btn"><ChevronLeft size={16} /></button>
-                  {[...Array(Math.min(totalPages,5))].map((_,i) => { 
-                    let p = i+1; 
-                    if(totalPages>5 && currentPage>3) { 
-                      p = currentPage-3+i; 
-                      if(p>totalPages) return null; 
-                    } 
-                    return <button key={i} onClick={() => setCurrentPage(p)} className={`page-btn ${currentPage===p ? 'active' : ''}`}>{p}</button>; 
-                  })}
-                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="page-btn"><ChevronRight size={16} /></button>
-                </div>
-              )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={listItemsPerPage}
+    onItemsPerPageChange={setListItemsPerPage}
+    totalItems={filteredCars.length}
+  />
+)}
             </div>
           ) : (
             <>
@@ -792,19 +789,15 @@ export default function AdminCars() {
                 })}
               </div>
               {totalPages > 1 && (
-                <div className="pagination" style={{ marginTop: '1.5rem' }}>
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1} className="page-btn"><ChevronLeft size={16} /></button>
-                  {[...Array(Math.min(totalPages,5))].map((_,i) => { 
-                    let p = i+1; 
-                    if(totalPages>5 && currentPage>3) { 
-                      p = currentPage-3+i; 
-                      if(p>totalPages) return null; 
-                    } 
-                    return <button key={i} onClick={() => setCurrentPage(p)} className={`page-btn ${currentPage===p ? 'active' : ''}`}>{p}</button>; 
-                  })}
-                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="page-btn"><ChevronRight size={16} /></button>
-                </div>
-              )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={listItemsPerPage}
+    onItemsPerPageChange={setListItemsPerPage}
+    totalItems={filteredCars.length}
+  />
+)}
             </>
           )}
 

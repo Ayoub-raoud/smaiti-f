@@ -9,6 +9,7 @@ import {
   selectMatricules, selectCars, selectMatriculesLoading, selectReservations,
   fetchClients, selectClients
 } from "../../Redux/store";
+import PaginationControls from '../../components/PaginationControls';
 import { toast } from "sonner";
 import {
   Plus, Edit2, Trash2, X, Search, RefreshCw, Car, Tag, Gauge, Calendar,
@@ -88,8 +89,7 @@ export default function AdminMatricules() {
   const [additionalItemType, setAdditionalItemType] = useState('quantity');
   const [additionalItemNotes, setAdditionalItemNotes] = useState('');
 
-  const itemsPerPage = 10;
-
+const [itemsPerPage, setItemsPerPage] = useState(10);
   // Car search state for the form
   const [carSearchTerm, setCarSearchTerm] = useState("");
   const [selectedCar, setSelectedCar] = useState(null);
@@ -1954,16 +1954,15 @@ export default function AdminMatricules() {
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="pagination">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="page-btn"><ChevronLeft size={16} /></button>
-                {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                  let p = i + 1;
-                  if (totalPages > 5 && currentPage > 3) { p = currentPage - 3 + i; if (p > totalPages) return null; }
-                  return (<button key={i} onClick={() => setCurrentPage(p)} className={`page-btn ${currentPage === p ? 'active' : ''}`}>{p}</button>);
-                })}
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="page-btn"><ChevronRight size={16} /></button>
-              </div>
-            )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredMatricules.length}
+  />
+)}
           </div>
 
           {/* Delete Confirmation Modal */}

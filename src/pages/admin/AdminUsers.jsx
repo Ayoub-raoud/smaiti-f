@@ -10,6 +10,7 @@ import {
     updateUtilisateur,
     selectUser,
 } from "../../Redux/store";
+import PaginationControls from '../../components/PaginationControls';
 import {
     fetchPages,
     fetchUserPermissions,
@@ -153,8 +154,7 @@ export default function AdminUsers() {
     const [sortField, setSortField] = useState("id");
     const [sortDirection, setSortDirection] = useState("desc");
 
-    const itemsPerPage = 10;
-
+const [itemsPerPage, setItemsPerPage] = useState(10);
     // Form state
     const [formData, setFormData] = useState({
         Fullname: "",
@@ -938,39 +938,15 @@ export default function AdminUsers() {
                             </table>
                         </div>
                         {totalPages > 1 && (
-                            <div className="pagination">
-                                <button
-                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                    disabled={currentPage === 1}
-                                    className="page-btn"
-                                >
-                                    <ChevronLeft size={16} />
-                                </button>
-                                {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                                    let pageNum = i + 1;
-                                    if (totalPages > 5 && currentPage > 3) {
-                                        pageNum = currentPage - 3 + i;
-                                        if (pageNum > totalPages) return null;
-                                    }
-                                    return (
-                                        <button
-                                            key={i}
-                                            onClick={() => setCurrentPage(pageNum)}
-                                            className={`page-btn ${currentPage === pageNum ? "active" : ""}`}
-                                        >
-                                            {pageNum}
-                                        </button>
-                                    );
-                                })}
-                                <button
-                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                                    disabled={currentPage === totalPages}
-                                    className="page-btn"
-                                >
-                                    <ChevronRight size={16} />
-                                </button>
-                            </div>
-                        )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredUsers.length}
+  />
+)}
                     </div>
 
                     {/* ---------- Delete Confirmation Modal ---------- */}

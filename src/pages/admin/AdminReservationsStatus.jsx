@@ -10,6 +10,7 @@ import {
   selectMatricules, selectClients, selectReservationsLoading,
   selectUser, refreshMatricules, createClient, api
 } from "../../Redux/store";
+import PaginationControls from '../../components/PaginationControls';
 import { toast } from "sonner";
 import {
   Check, X, Eye, Trash2, Search, RefreshCw, ChevronLeft, ChevronRight,
@@ -1582,8 +1583,7 @@ export default function AdminReservationsStatus() {
   const [sortDirection, setSortDirection] = useState("desc");
   const [startDateFilter, setStartDateFilter] = useState("");
   const [endDateFilter, setEndDateFilter] = useState("");
-  const itemsPerPage = 10;
-
+const [itemsPerPage, setItemsPerPage] = useState(10);
   // ===== Confirm Modal State =====
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingReservationId, setPendingReservationId] = useState(null);
@@ -2445,16 +2445,15 @@ export default function AdminReservationsStatus() {
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="pagination">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="page-btn"><ChevronLeft size={16} /></button>
-                {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                  let p = i + 1;
-                  if (totalPages > 5 && currentPage > 3) { p = currentPage - 3 + i; if (p > totalPages) return null; }
-                  return <button key={i} onClick={() => setCurrentPage(p)} className={`page-btn ${currentPage === p ? "active" : ""}`}>{p}</button>;
-                })}
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="page-btn"><ChevronRight size={16} /></button>
-              </div>
-            )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredReservations.length}
+  />
+)}
           </div>
 
           {/* Details Modal */}

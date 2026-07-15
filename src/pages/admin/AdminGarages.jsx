@@ -9,6 +9,7 @@ import {
   updateGarage, 
   deleteGarage
 } from "../../Redux/store";
+import PaginationControls from '../../components/PaginationControls';
 import { toast } from "sonner";
 import {
   Plus, Edit2, Trash2, X, Eye, Search, RefreshCw,
@@ -51,8 +52,7 @@ export default function AdminGarages() {
     is_active: true,
   });
 
-  const itemsPerPage = 10;
-
+const [itemsPerPage, setItemsPerPage] = useState(10);
   // Load garages
   useEffect(() => {
     dispatch(fetchGarages());
@@ -547,39 +547,15 @@ export default function AdminGarages() {
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="pagination">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="page-btn"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                  let pageNum = i + 1;
-                  if (totalPages > 5 && currentPage > 3) {
-                    pageNum = currentPage - 3 + i;
-                    if (pageNum > totalPages) return null;
-                  }
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`page-btn ${currentPage === pageNum ? "active" : ""}`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="page-btn"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredGarages.length}
+  />
+)}
           </div>
         </div>
       )}

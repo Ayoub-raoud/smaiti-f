@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom"; // <-- ADDED
 import { fetchCars, selectCars, fetchMatricules, selectMatricules } from "../../Redux/store";
+import PaginationControls from '../../components/PaginationControls';
 import axios from "axios";
 import { toast } from "sonner";
 import { 
@@ -52,7 +53,7 @@ export default function AdminPayments() {
   const [interestRate, setInterestRate] = useState("5");
   const [tvaRate, setTvaRate] = useState("20");
   
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // ---------- Searchable Matricule state ----------
   const [matriculeSearchTerm, setMatriculeSearchTerm] = useState("");
@@ -1291,20 +1292,15 @@ const handleMatriculeSearch = (term) => {
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="pagination">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1} className="page-btn">
-                  <ChevronLeft size={16} />
-                </button>
-                {[...Array(Math.min(totalPages,5))].map((_,i) => {
-                  let pageNum = i+1;
-                  if (totalPages>5 && currentPage>3) { pageNum = currentPage-3+i; if (pageNum>totalPages) return null; }
-                  return <button key={i} onClick={() => setCurrentPage(pageNum)} className={`page-btn ${currentPage===pageNum?'active':''}`}>{pageNum}</button>;
-                })}
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="page-btn">
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredFinancings.length}
+  />
+)}
           </div>
         </div>
       )}

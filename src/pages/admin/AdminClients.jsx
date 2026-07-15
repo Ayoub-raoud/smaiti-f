@@ -15,6 +15,7 @@ import {
   Download, ExternalLink
 } from "lucide-react";
 import { getImageUrl } from '../../utils/imageUtils';
+import PaginationControls from '../../components/PaginationControls';
 
 export default function AdminClients() {
   const dispatch = useDispatch();
@@ -43,8 +44,7 @@ export default function AdminClients() {
   const [sortField, setSortField] = useState("id");
   const [sortDirection, setSortDirection] = useState("desc");
   
-  const itemsPerPage = 10;
-  
+const [itemsPerPage, setItemsPerPage] = useState(10);  
   const [formData, setFormData] = useState({
     nom: "",
     prenom: "",
@@ -1268,27 +1268,15 @@ export default function AdminClients() {
                 </table>
               </div>
               {totalPages > 1 && (
-                <div className="pagination">
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1} className="page-btn">
-                    <ChevronLeft size={16} />
-                  </button>
-                  {[...Array(Math.min(totalPages,5))].map((_,i) => { 
-                    let p = i+1; 
-                    if(totalPages>5 && currentPage>3) { 
-                      p = currentPage-3+i; 
-                      if(p>totalPages) return null; 
-                    } 
-                    return (
-                      <button key={i} onClick={() => setCurrentPage(p)} className={`page-btn ${currentPage===p ? 'active' : ''}`}>
-                        {p}
-                      </button>
-                    ); 
-                  })}
-                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="page-btn">
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              )}
+  <PaginationControls
+    currentPage={currentPage}
+    totalPages={totalPages}
+    onPageChange={setCurrentPage}
+    itemsPerPage={itemsPerPage}
+    onItemsPerPageChange={setItemsPerPage}
+    totalItems={filteredClients.length}
+  />
+)}
             </div>
 
             {/* Delete Confirmation Modal */}
