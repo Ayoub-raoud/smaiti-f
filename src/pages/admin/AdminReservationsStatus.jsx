@@ -158,14 +158,14 @@ const ContractLocation = ({ reservation, showSignatures = false, currentUser, di
     }
   }, [reservation]);
 
-  const [paperwork, setPaperwork] = useState({
-    circulation: true,
-    carteGrise: true,
-    assurance: true,
-    vignette: true,
-    visiteTechnique: true,
-    autorisation: true
-  });
+  const paperwork = reservation?.paperwork || {
+  circulation: true,
+  carteGrise: true,
+  assurance: true,
+  vignette: true,
+  visiteTechnique: true,
+  autorisation: true
+};
 
   const getCurrentUserName = () => {
     let userName = "";
