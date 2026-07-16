@@ -212,15 +212,20 @@ const ContractLocation = ({
   };
 
   const calculateRentalDays = () => {
-    if (!reservation?.start_date || !reservation?.end_date) return "";
-    const start = new Date(reservation.start_date);
-    const end = new Date(reservation.end_date);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-    const diffTime = Math.abs(end - start);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays === 0 ? 1 : diffDays; // exclusive (07/07->07/08 = 1)
-  };
+  if (!reservation?.start_date || !reservation?.end_date) return null;
+  const start = new Date(reservation.start_date);
+  const end = new Date(reservation.end_date);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  const diffTime = Math.abs(end - start);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays === 0 ? 1 : diffDays;
+};
+
+const rentalDays = reservation?.rental_days || calculateRentalDays();
+const dailyPrice = (reservation?.total_price && rentalDays)
+  ? (reservation.total_price / rentalDays).toFixed(2)
+  : reservation?.car?.price_per_day || "—";
 
   const getDisplayOption = (section) => displayOptions[section] || "show";
   const secondDriverClient = clients.find(c => c.id === reservation?.second_driver_client_id);
@@ -254,7 +259,7 @@ const ContractLocation = ({
   const renderContractNumber = () => {
     if (reservation?.contract_number && reservation?.contract_year) {
       const year = reservation.contract_year;
-      const num = String(reservation.contract_number).padStart(4, '0');
+      const num = String(reservation.contract_number).padStart(5, '0');
       return `${year}/${num}`;
     }
     return '—';
@@ -411,7 +416,7 @@ const ContractLocation = ({
               <div className="contract-section pricing-section">
                 <div className="section-title-print">TARIFS</div>
                 <div className="section-content">
-                  <div className="field-row"><span className="field-label">Prix journalier :</span><span className="field-value">{getDisplayValue(pricesOption, `${reservation?.car?.price_per_day || "—"} DH`)}</span></div>
+                  <div className="field-row"><span className="field-label">Prix journalier :</span><span className="field-value">{getDisplayValue(pricesOption, `${dailyPrice} DH`)}</span></div>
                   <div className="field-row total-row"><span className="field-label">Total TTC :</span><span className="field-value total-amount">{getDisplayValue(pricesOption, `${reservation?.total_price || "—"} DH`)}</span></div>
                   <div className="field-row"><span className="field-label">Montant payé :</span><span className="field-value">{getDisplayValue(pricesOption, `${reservation?.amount_paid || "0"} DH`)}</span></div>
                   <div className="field-row"><span className="field-label">Reste à payer :</span><span className="field-value remaining-amount">{getDisplayValue(pricesOption, `${reservation?.remaining_amount || reservation?.total_price || "0"} DH`)}</span></div>
