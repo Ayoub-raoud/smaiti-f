@@ -882,16 +882,46 @@ const ReservationForm = ({
     }
   }, [formData.matricule_id, matricules]);
 
+  // ============================================================
+  // FIXED: Auto-calculate total only when creating new
+  // ============================================================
   useEffect(() => {
-    if (formData.car_id && formData.rental_days) {
+    if (!editingReservation && formData.car_id && formData.rental_days) {
       const car = cars.find(c => c.id == formData.car_id);
       if (car) {
         const total = car.price_per_day * formData.rental_days;
-        const remaining = total - (formData.amount_paid || 0);
-        setFormData(prev => ({ ...prev, total_price: total, remaining_amount: remaining }));
+        setFormData(prev => ({ ...prev, total_price: total }));
       }
     }
-  }, [formData.car_id, formData.rental_days, formData.amount_paid, cars]);
+  }, [formData.car_id, formData.rental_days, cars, editingReservation]);
+
+  // ============================================================
+  // FIXED: Always update remaining amount
+  // ============================================================
+  useEffect(() => {
+    const total = parseFloat(formData.total_price) || 0;
+    const paid = parseFloat(formData.amount_paid) || 0;
+    const remaining = Math.max(total - paid, 0);
+    setFormData(prev => ({ ...prev, remaining_amount: remaining }));
+  }, [formData.total_price, formData.amount_paid]);
+
+  // ------------------------------------------------------------
+  // NEW: Recalculate total based on current car and days (manual)
+  // ------------------------------------------------------------
+  const handleRecalculateTotal = () => {
+    if (!formData.car_id || !formData.rental_days) {
+      toast.warning("Veuillez sélectionner un véhicule et définir le nombre de jours.");
+      return;
+    }
+    const car = cars.find(c => c.id == formData.car_id);
+    if (car) {
+      const total = car.price_per_day * formData.rental_days;
+      setFormData(prev => ({ ...prev, total_price: total }));
+      toast.success("Prix total recalculé.");
+    } else {
+      toast.error("Véhicule non trouvé.");
+    }
+  };
 
   // ===== MODIFIED: handlers for exclusive day counting =====
   const handleStartDateChange = (value) => {
@@ -1265,6 +1295,12 @@ const ReservationForm = ({
                     <option value="cancelled">Annulée</option>
                   </select>
                 </div>
+              </div>
+              {/* NEW: Recalculate button */}
+              <div style={{ marginTop: "0.5rem" }}>
+                <button type="button" className="inline-secondary-btn" onClick={handleRecalculateTotal} style={{ fontSize: "0.7rem" }}>
+                  <RefreshCw size={14} /> Recalculer le total
+                </button>
               </div>
               <div className="inline-payment-section">
                 <button type="button" className="inline-add-payment" onClick={() => setShowAddPayment(!showAddPayment)}>

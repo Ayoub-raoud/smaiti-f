@@ -2649,29 +2649,91 @@ const MatriculeCategoryCard = ({
     return diffDays;
   };
 
-  const downloadCSV = () => {
+  // PDF export with formatted dates
+  const downloadPDF = () => {
     const filtered = filteredMatricules;
     if (filtered.length === 0) {
       toast.warning("Aucune donnée à exporter");
       return;
     }
-    const headers = ['Matricule', 'Marque/Modèle', 'Kilométrage', 'Client', 'Date retour', 'Statut'];
-    const rows = filtered.map(mat => [
+
+    const formatDateDisplay = (dateStr) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59);
+    doc.text('SMAITI CAR', pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setTextColor(184, 134, 11);
+    doc.text('LOCATION DE VOITURE', pageWidth / 2, 28, { align: 'center' });
+    doc.setDrawColor(212, 175, 55);
+    doc.line(20, 32, pageWidth - 20, 32);
+
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Liste des matricules - ${title}`, pageWidth / 2, 42, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, pageWidth / 2, 50, { align: 'center' });
+    doc.text(`Total : ${filtered.length} matricule(s)`, pageWidth / 2, 56, { align: 'center' });
+
+    const tableData = filtered.map(mat => [
       mat.matricule_code || '',
       `${mat.car?.brand || ''} ${mat.car?.model || ''}`.trim(),
       mat.kilometrage?.toLocaleString() || '',
       mat.currentReservation?.client ? `${mat.currentReservation.client.prenom} ${mat.currentReservation.client.nom}` : '',
-      mat.currentReservation?.end_date || '',
+      formatDateDisplay(mat.currentReservation?.end_date),
       mat.status === 'active' ? 'Actif' : 'Inactif'
     ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `matricules_${title.replace(/\s/g, '_')}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    toast.success("Excel téléchargé");
+
+    autoTable(doc, {
+      head: [['Matricule', 'Marque/Modèle', 'Km', 'Client', 'Date retour', 'Statut']],
+      body: tableData,
+      startY: 62,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [30, 41, 59],
+        fontStyle: 'bold',
+        halign: 'center',
+        fontSize: 8,
+      },
+      bodyStyles: {
+        halign: 'center',
+        fontSize: 7,
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 40 },
+        4: { cellWidth: 25 },
+        5: { cellWidth: 20 },
+      },
+      margin: { left: 15, right: 15 },
+      tableWidth: 'auto',
+    });
+
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('SMAITI CAR — Document généré automatiquement.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
+    doc.save(`matricules_${title.replace(/\s/g, '_')}.pdf`);
+    toast.success("PDF téléchargé");
   };
 
   return (
@@ -2690,14 +2752,24 @@ const MatriculeCategoryCard = ({
 
       {isExpanded && (
         <div className="card-dropdown">
-          <div className="dropdown-search">
-            <Search size={14} className="search-icon" />
+          {/* ===== FIXED: one‑line search bar ===== */}
+          <div className="dropdown-search" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
+            <Search size={14} className="search-icon" style={{ flexShrink: 0 }} />
             <input
               type="text"
               placeholder="Rechercher une immatriculation..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onClick={(e) => e.stopPropagation()}
+              style={{
+                flex: '1 1 auto',
+                minWidth: '60px',
+                border: 'none',
+                outline: 'none',
+                fontSize: '0.8rem',
+                background: 'transparent',
+                padding: '0.2rem 0',
+              }}
             />
             {searchTerm && (
               <X 
@@ -2706,7 +2778,8 @@ const MatriculeCategoryCard = ({
                 onClick={(e) => {
                   e.stopPropagation();
                   setSearchTerm('');
-                }} 
+                }}
+                style={{ flexShrink: 0, cursor: 'pointer' }}
               />
             )}
             {isRetourImminent && (
@@ -2714,36 +2787,36 @@ const MatriculeCategoryCard = ({
                 className={`today-filter-btn ${showTodayOnly ? 'active' : ''}`}
                 onClick={() => setShowTodayOnly(!showTodayOnly)}
                 style={{
-                  marginLeft: 'auto',
-                  padding: '0.2rem 0.6rem',
+                  padding: '0.15rem 0.5rem',
                   borderRadius: '1rem',
                   border: '1px solid #e2e8f0',
                   background: showTodayOnly ? '#eab308' : 'white',
                   color: showTodayOnly ? 'white' : '#1e293b',
-                  fontSize: '0.65rem',
+                  fontSize: '0.6rem',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                 }}
               >
                 📅 Aujourd'hui
               </button>
             )}
             <button
-              onClick={downloadCSV}
+              onClick={downloadPDF}
               style={{
-                padding: '0.2rem 0.6rem',
+                padding: '0.15rem 0.5rem',
                 borderRadius: '1rem',
                 border: '1px solid #e2e8f0',
                 background: 'white',
-                fontSize: '0.65rem',
+                fontSize: '0.6rem',
                 fontWeight: 600,
                 cursor: 'pointer',
-                marginLeft: '0.5rem',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
-              ⬇️ Excel
+              ⬇️ PDF
             </button>
           </div>
 

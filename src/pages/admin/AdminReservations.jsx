@@ -891,16 +891,28 @@ const ReservationForm = ({
     }
   }, [formData.matricule_id, matricules]);
 
+  // ***********************************************
+  // FIXED: Auto-calculate total only when creating new
+  // ***********************************************
   useEffect(() => {
-    if (formData.car_id && formData.rental_days) {
+    if (!editingReservation && formData.car_id && formData.rental_days) {
       const car = cars.find(c => c.id == formData.car_id);
       if (car) {
         const total = car.price_per_day * formData.rental_days;
-        const remaining = total - (formData.amount_paid || 0);
-        setFormData(prev => ({ ...prev, total_price: total, remaining_amount: remaining }));
+        setFormData(prev => ({ ...prev, total_price: total }));
       }
     }
-  }, [formData.car_id, formData.rental_days, formData.amount_paid, cars]);
+  }, [formData.car_id, formData.rental_days, cars, editingReservation]);
+
+  // ***********************************************
+  // FIXED: Always update remaining amount
+  // ***********************************************
+  useEffect(() => {
+    const total = parseFloat(formData.total_price) || 0;
+    const paid = parseFloat(formData.amount_paid) || 0;
+    const remaining = Math.max(total - paid, 0);
+    setFormData(prev => ({ ...prev, remaining_amount: remaining }));
+  }, [formData.total_price, formData.amount_paid]);
 
   // ---- Date/days handlers (exclusive) ----
   const handleStartDateChange = (value) => {
