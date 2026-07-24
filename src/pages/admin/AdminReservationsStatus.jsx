@@ -29,7 +29,25 @@ import html2canvas from "html2canvas";
 import checklistImage from "../../assets/checklist.png";
 import logoImage from "../../assets/logo.png";
 import agentSignatureImage from "../../assets/cache.png";
+// Fonction pour télécharger et ouvrir le PDF
+const downloadAndOpenPDF = (doc, filename) => {
+  const pdfBlob = doc.output('blob');
+  const url = URL.createObjectURL(pdfBlob);
 
+  // Téléchargement
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Ouverture dans un nouvel onglet
+  window.open(url, '_blank');
+
+  // Libération de l'URL après un délai
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
 // ==================== ContractDisplayOptions ====================
 const ContractDisplayOptions = ({ options, onOptionChange, onResetAll }) => {
   const sections = [
@@ -147,8 +165,15 @@ const SignatureBlock = ({ label, signature = "", option }) => {
   );
 };
 
-// ==================== ContractLocation ====================
-const ContractLocation = ({ reservation, showSignatures = false, currentUser, displayOptions = {}, clients = [] }) => {
+// ==================== ContractLocation (version avec signature de taille fixe) ====================
+const ContractLocation = ({
+  reservation,
+  showSignatures = false,
+  currentUser,
+  displayOptions = {},
+  clients = [],
+  containerId = "contract-print"
+}) => {
   const storedSignatures = reservation?.signatures || { agent: "", locataire: "", secondConducteur: "" };
   const [signatures, setSignatures] = useState(storedSignatures);
 
@@ -159,13 +184,13 @@ const ContractLocation = ({ reservation, showSignatures = false, currentUser, di
   }, [reservation]);
 
   const paperwork = reservation?.paperwork || {
-  circulation: true,
-  carteGrise: true,
-  assurance: true,
-  vignette: true,
-  visiteTechnique: true,
-  autorisation: true
-};
+    circulation: true,
+    carteGrise: true,
+    assurance: true,
+    vignette: true,
+    visiteTechnique: true,
+    autorisation: true
+  };
 
   const getCurrentUserName = () => {
     let userName = "";
@@ -205,20 +230,20 @@ const ContractLocation = ({ reservation, showSignatures = false, currentUser, di
   };
 
   const calculateRentalDays = () => {
-  if (!reservation?.start_date || !reservation?.end_date) return null;
-  const start = new Date(reservation.start_date);
-  const end = new Date(reservation.end_date);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
-  const diffTime = Math.abs(end - start);
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays === 0 ? 1 : diffDays;
-};
+    if (!reservation?.start_date || !reservation?.end_date) return null;
+    const start = new Date(reservation.start_date);
+    const end = new Date(reservation.end_date);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays === 0 ? 1 : diffDays;
+  };
 
-const rentalDays = reservation?.rental_days || calculateRentalDays();
-const dailyPrice = (reservation?.total_price && rentalDays)
-  ? (reservation.total_price / rentalDays).toFixed(2)
-  : reservation?.car?.price_per_day || "—";
+  const rentalDays = reservation?.rental_days || calculateRentalDays();
+  const dailyPrice = (reservation?.total_price && rentalDays)
+    ? (reservation.total_price / rentalDays).toFixed(2)
+    : reservation?.car?.price_per_day || "—";
 
   const getDisplayOption = (section) => displayOptions[section] || "show";
   const secondDriverClient = clients.find(c => c.id === reservation?.second_driver_client_id);
@@ -261,7 +286,7 @@ const dailyPrice = (reservation?.total_price && rentalDays)
   const locataireSignature = signatures.locataire_image || signatures.locataire || '';
 
   return (
-    <div className="contract-container-print" id="contract-print">
+    <div className="contract-container-print" id={containerId}>
       {/* Header */}
       <table className="contract-header-table" cellPadding="0" cellSpacing="0">
         <tbody>
@@ -397,8 +422,10 @@ const dailyPrice = (reservation?.total_price && rentalDays)
                   <div className="field-row"><span className="field-label">Retour :</span><span className="field-value">{getDisplayValue(datesOption, `${formatDate(reservation?.end_date)} à ${reservation?.end_time || "18:00"}`)}</span></div>
                   <div className="field-row"><span className="field-label">Durée :</span><span className="field-value">{getDisplayValue(rentalDaysOption, `${calculateRentalDays()} jours`)}</span></div>
                   <div className="field-row"><span className="field-label">Km départ :</span><span className="field-value">{getDisplayValue(kilometrageOption, `${reservation?.kilometrage_sortie || "—"} km`)}</span></div>
-                  {/* ==== ADDED: Km retour ==== */}
-                  <div className="field-row"><span className="field-label">Km retour :</span><span className="field-value">{getDisplayValue(kilometrageOption, reservation?.kilometrage_entree ? `${reservation.kilometrage_entree} km` : "—")}</span></div>
+                  <div className="field-row">
+                    <span className="field-label">Km retour :</span>
+                    <span className="field-value">{getDisplayValue(kilometrageOption, reservation?.kilometrage_entree ? `${reservation.kilometrage_entree} km` : "—")}</span>
+                  </div>
                   <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, currentUserName)}</span></div>
                   <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, reservationCreatorName)}</span></div>
                 </div>
@@ -449,12 +476,20 @@ const dailyPrice = (reservation?.total_price && rentalDays)
         </div>
       </div>
 
-      {/* Observations */}
+      {/* ===== SECTION CLAUSE KILOMÉTRAGE ===== */}
+      <div className="kilometrage-clause-section">
+        <div className="kilometrage-clause-title">⚠️ IMPORTANT - CLAUSE DE DÉPASSEMENT DE KILOMÉTRAGE</div>
+        <div className="kilometrage-clause-text">
+          En cas de dépassement du kilométrage mentionné (200km par jour), vous allez payer 1.5 DH pour chaque kilomètre additionnel au-delà de la limite autorisée.
+        </div>
+      </div>
+
+      {/* Observations (sans la clause) */}
       <div className="observations-row-print">
         <ObservationBox title="Observations" option={observationsOption}>
           <div className="observation-text">
             {getDisplayValue(observationsOption,
-              `Véhicule loué en bon état général. Le client s'engage à retourner le véhicule dans le même état.${reservation?.notes ? ` Notes: ${reservation.notes}` : ""}`,
+              `Véhicule loué en bon état général. Le client s'engage à retourner le véhicule dans le même état.`,
               "___________",
               ""
             )}
@@ -507,64 +542,264 @@ const dailyPrice = (reservation?.total_price && rentalDays)
       </div>
 
       <style>{`
-        .contract-container-print { max-width: 1100px; margin: 0 auto; background: white; font-family: 'Inter', sans-serif; font-size: 11px; color: #1a2c3e; line-height: 1.4; }
-        .contract-header-table { width: 100%; border-bottom: 2px solid #d4af37; margin-bottom: 10px; padding-bottom: 8px; }
+        /* === Global === */
+        .contract-container-print {
+          max-width: 1100px;
+          margin: 0 auto;
+          background: white;
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          color: #1a2c3e;
+          line-height: 1.5;
+          padding: 0 6px;
+        }
+        /* === Header === */
+        .contract-header-table {
+          width: 100%;
+          border-bottom: 2px solid #d4af37;
+          margin-bottom: 10px;
+          padding-bottom: 6px;
+        }
         .header-left { width: 30%; vertical-align: top; }
         .header-center { width: 40%; text-align: center; vertical-align: middle; }
         .header-right { width: 30%; text-align: right; vertical-align: top; }
-        .company-name { font-size: 20px; font-weight: 800; letter-spacing: 2px; color: #1e293b; }
-        .company-slogan { font-size: 10px; font-weight: 600; margin-top: 4px; color: #b8860b; }
-        .company-phone { font-size: 9px; margin-top: 6px; color: #475569; }
-        .contract-logo-print { height: 85px; width: auto; object-fit: contain; }
-        .contract-number-box { border: 1px solid #e2e8f0; padding: 6px 14px; text-align: center; font-size: 10px; display: inline-block; background: #fefce8; border-radius: 10px; }
-        .arabic-text { margin-top: 8px; font-size: 12px; font-weight: 500; color: #475569; }
-        .contract-title-print { text-align: center; font-size: 17px; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; color: #0f172a; }
+        .company-name { font-size: 20px; font-weight: 800; letter-spacing: 1.5px; color: #1e293b; }
+        .company-slogan { font-size: 10px; font-weight: 600; margin-top: 2px; color: #b8860b; }
+        .company-phone { font-size: 9px; margin-top: 4px; color: #475569; }
+        .contract-logo-print { height: 75px; width: auto; object-fit: contain; }
+        .contract-number-box {
+          border: 1px solid #94a3b8;
+          padding: 6px 12px;
+          text-align: center;
+          font-size: 10px;
+          display: inline-block;
+          background: #fefce8;
+          border-radius: 8px;
+        }
+        .arabic-text { margin-top: 6px; font-size: 12px; font-weight: 500; color: #475569; }
+        .contract-title-print {
+          text-align: center;
+          font-size: 17px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 2px;
+          margin-bottom: 10px;
+          border-bottom: 1px solid #94a3b8;
+          padding-bottom: 6px;
+          color: #0f172a;
+        }
+        /* === Two columns === */
         .contract-content-table { width: 100%; }
-        .contract-left-col { width: 50%; vertical-align: top; padding-right: 16px; }
-        .contract-right-col { width: 50%; vertical-align: top; padding-left: 16px; }
-        .contract-section { margin-bottom: 6px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: white; }
-        .section-title-print { background: #f8fafc; padding: 8px 12px; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0; color: #1e293b; }
-        .section-content { padding: 10px 12px; }
-        .field-row { display: flex; margin-bottom: 6px; font-size: 10px; align-items: baseline; }
-        .field-label { width: 110px; font-weight: 600; color: #475569; flex-shrink: 0; }
-        .field-value { flex: 1; border-bottom: 1px dotted #cbd5e1; padding-left: 6px; color: #0f172a; }
+        .contract-left-col { width: 50%; vertical-align: top; padding-right: 12px; }
+        .contract-right-col { width: 50%; vertical-align: top; padding-left: 12px; }
+        .contract-section {
+          margin-bottom: 8px;
+          border: 1px solid #94a3b8;
+          border-radius: 8px;
+          overflow: hidden;
+          background: white;
+        }
+        .section-title-print {
+          background: #f8fafc;
+          padding: 6px 12px;
+          font-weight: 700;
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          border-bottom: 1px solid #94a3b8;
+          color: #1e293b;
+        }
+        .section-content { padding: 8px 12px; }
+        .field-row {
+          display: flex;
+          margin-bottom: 4px;
+          font-size: 10px;
+          align-items: baseline;
+        }
+        .field-label {
+          width: 100px;
+          font-weight: 600;
+          color: #475569;
+          flex-shrink: 0;
+        }
+        .field-value {
+          flex: 1;
+          border-bottom: 1px dotted #cbd5e1;
+          padding-left: 4px;
+          color: #0f172a;
+        }
         .matricule-code { font-family: 'Courier New', monospace; font-weight: 700; color: #b8860b; letter-spacing: 0.5px; }
         .total-row .total-amount { font-weight: 800; font-size: 12px; color: #b8860b; }
         .remaining-amount { font-weight: 700; color: #dc2626; }
         .pricing-section { border-left: 4px solid #d4af37; }
+        /* === Checklist === */
         .checklist-section-print { margin: 8px 0; }
-        .checklist-table { width: 100%; margin-bottom: 14px; }
-        .checklist-cell { width: 50%; text-align: center; vertical-align: top; padding: 0 8px; }
-        .checklist-label { font-weight: 700; margin-bottom: 6px; font-size: 10px; color: #334155; }
-        .documents-row { display: flex; flex-wrap: wrap; align-items: center; padding: 10px 12px; background: #f9fafb; border-radius: 10px; margin-top: 10px; gap: 12px; }
-        .documents-label { font-weight: 700; margin-right: 6px; font-size: 10px; color: #334155; }
-        .documents-items { display: flex; flex-wrap: wrap; gap: 14px; }
-        .doc-item { display: inline-flex; align-items: center; gap: 5px; font-size: 9px; background: white; padding: 3px 8px; border-radius: 20px; border: 1px solid #e2e8f0; }
-        .checkbox-square { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1.5px solid #334155; background: white; font-size: 10px; font-weight: bold; margin-right: 4px; border-radius: 3px; }
+        .checklist-table { width: 100%; margin-bottom: 8px; }
+        .checklist-cell { width: 50%; text-align: center; vertical-align: top; padding: 0 6px; }
+        .checklist-label { font-weight: 700; margin-bottom: 4px; font-size: 10px; color: #334155; }
+        .documents-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          padding: 8px 12px;
+          background: #f9fafb;
+          border-radius: 8px;
+          margin-top: 6px;
+          gap: 10px;
+        }
+        .documents-label { font-weight: 700; margin-right: 4px; font-size: 10px; color: #334155; }
+        .documents-items { display: flex; flex-wrap: wrap; gap: 10px; }
+        .doc-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 9px;
+          background: white;
+          padding: 3px 8px;
+          border-radius: 12px;
+          border: 1px solid #94a3b8;
+        }
+        .checkbox-square {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 13px;
+          height: 13px;
+          border: 1.5px solid #334155;
+          background: white;
+          font-size: 9px;
+          font-weight: bold;
+          margin-right: 2px;
+          border-radius: 2px;
+        }
         .checkbox-square.checked { background: #d4af37 !important; border-color: #d4af37 !important; color: #0f172a !important; }
-        .car-diagram-container img { width: 100%; max-width: 150px; height: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; padding: 4px; }
-        .observations-row-print { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0; }
-        .observation-box { flex: 1; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: white; }
-        .observation-box.half-width { flex: 0 0 calc(33.33% - 10px); }
-        .obs-title { display: block; padding: 8px 12px; background: #f8fafc; font-weight: 700; font-size: 10px; border-bottom: 1px solid #e2e8f0; color: #1e293b; }
-        .observation-content { padding: 10px 12px; font-size: 9.5px; min-height: 60px; color: #334155; }
-        .signatures-row-print { display: flex; gap: 24px; margin: 10px 0; }
+        .car-diagram-container img {
+          width: 100%;
+          max-width: 130px;
+          height: auto;
+          border: 1px solid #94a3b8;
+          border-radius: 6px;
+          background: #fafafa;
+          padding: 4px;
+        }
+        /* === Clause kilométrage === */
+        .kilometrage-clause-section {
+          margin: 10px 0;
+          padding: 10px 16px;
+          border: 2px solid #eab308;
+          border-radius: 10px;
+          background: #fefce8;
+          box-shadow: 0 1px 4px rgba(234, 179, 8, 0.15);
+        }
+        .kilometrage-clause-title {
+          font-size: 11px;
+          font-weight: 800;
+          color: #92400e;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 6px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .kilometrage-clause-text {
+          font-size: 10.5px;
+          color: #1a2c3e;
+          line-height: 1.5;
+          font-weight: 500;
+        }
+        /* === Observations === */
+        .observations-row-print { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; }
+        .observation-box {
+          flex: 1;
+          border: 1px solid #94a3b8;
+          border-radius: 10px;
+          overflow: hidden;
+          background: white;
+        }
+        .observation-box.half-width { flex: 0 0 calc(33.33% - 8px); }
+        .obs-title {
+          display: block;
+          padding: 6px 12px;
+          background: #f8fafc;
+          font-weight: 700;
+          font-size: 10px;
+          border-bottom: 1px solid #94a3b8;
+          color: #1e293b;
+        }
+        .observation-content {
+          padding: 8px 12px;
+          font-size: 9.5px;
+          min-height: 50px;
+          color: #334155;
+        }
+        /* === Signatures (hauteur fixe) === */
+        .signatures-row-print { display: flex; gap: 20px; margin: 10px 0; }
         .signature-block { flex: 1; text-align: center; }
         .signature-label { font-size: 9px; font-weight: 700; margin-bottom: 6px; color: #475569; }
-        .signature-box { border: 1px solid #cbd5e1; min-height: 60px; display: flex; align-items: center; justify-content: center; background: #fafafa; border-radius: 8px; }
-        .signature-text { font-size: 9px; font-style: italic; color: #64748b; }
-        .contract-footer-print { margin-top: 4px; padding-top: 6px; border-top: 1px solid #d4af37; text-align: center; font-size: 8px; color: #64748b; }
+        .signature-box {
+          border: 1px solid #94a3b8;
+          height: 50px;                /* hauteur fixe */
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #fafafa;
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        .signature-box img {
+          max-height: 45px;
+          max-width: 90%;
+          object-fit: contain;
+        }
+        .signature-text {
+          font-size: 9px;
+          font-style: italic;
+          color: #64748b;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 100%;
+        }
+        /* === Footer === */
+        .contract-footer-print {
+          margin-top: 8px;
+          padding-top: 6px;
+          border-top: 1px solid #d4af37;
+          text-align: center;
+          font-size: 8px;
+          color: #64748b;
+        }
         .footer-line { margin-bottom: 2px; line-height: 1.3; }
-        .contract-number-box.stylish { border: none; background: #fefce857; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 8px 20px; }
-        .contract-number-box.stylish .contract-number-label { font-size: 9px; color: #92400e; letter-spacing: 1.5px; }
-        .contract-number-box.stylish .contract-number-value { font-size: 22px; font-weight: 800; color: #1a1a2e; }
+        .contract-number-box.stylish {
+          border: none;
+          background: #fefce857;
+          border-radius: 10px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+          padding: 4px 14px;
+        }
+        .contract-number-box.stylish .contract-number-label { font-size: 9px; color: #92400e; letter-spacing: 1px; }
+        .contract-number-box.stylish .contract-number-value { font-size: 20px; font-weight: 800; color: #1a1a2e; }
+        /* === Print === */
         @media print {
           .contract-container-print { margin: 0; padding: 0; background: white; }
           .checkbox-square.checked { background: black !important; border-color: black !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .section-title-print { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .documents-row { background: #f9f9f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .contract-number-box.stylish { background: #fefce8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .kilometrage-clause-section { background: #fefce8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
+          .contract-container-print .field-value {
+  font-weight: 600; /* valeurs en gras */
+}
+
+.contract-container-print .observation-content {
+  font-weight: 500; /* observations en demi-gras */
+}
+
+.contract-container-print .kilometrage-clause-text {
+  font-weight: 600; /* clause kilométrage en gras */
+}
       `}</style>
     </div>
   );
@@ -946,15 +1181,22 @@ const ReservationForm = ({
   };
 
   const handleRentalDaysChange = (value) => {
-    const days = parseInt(value) || 1;
+  // Si l'utilisateur efface tout, on met null
+  if (value === '') {
+    setFormData(prev => ({ ...prev, rental_days: null }));
+    return;
+  }
+  const days = parseInt(value, 10);
+  if (!isNaN(days) && days >= 1) {
     setFormData(prev => ({ ...prev, rental_days: days }));
     if (formData.start_date) {
       const start = new Date(formData.start_date);
       const end = new Date(start);
-      end.setDate(start.getDate() + days); // exclusive
-      setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
+      end.setDate(start.getDate() + days);
+      setFormData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
     }
-  };
+  }
+};
 
   const handleClientSelect = (client) => {
     setSelectedClient(client);
@@ -1192,7 +1434,13 @@ const ReservationForm = ({
                 <div className="inline-field"><label>Heure de début</label><input type="time" className="inline-input" value={formData.start_time} onChange={(e) => setFormData(prev => ({ ...prev, start_time: e.target.value }))} /></div>
                 <div className="inline-field"><label>Date de fin *</label><input type="date" className="inline-input" value={formData.end_date} onChange={(e) => handleEndDateChange(e.target.value)} required /></div>
                 <div className="inline-field"><label>Heure de fin</label><input type="time" className="inline-input" value={formData.end_time} onChange={(e) => setFormData(prev => ({ ...prev, end_time: e.target.value }))} /></div>
-                <div className="inline-field"><label>Nombre de jours</label><input type="number" className="inline-input" value={formData.rental_days} onChange={(e) => handleRentalDaysChange(e.target.value)} min="1" /></div>
+                <div className="inline-field"><label>Nombre de jours</label><input
+  type="number"
+  className="inline-input"
+  value={formData.rental_days ?? ''}
+  onChange={(e) => handleRentalDaysChange(e.target.value)}
+  min="1"
+/></div>
               </div>
             </div>
           </div>
@@ -1419,54 +1667,56 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   };
 
   const generateContractPDF = async (includeSignatures = false) => {
-    try {
-      toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
-      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const contractElement = document.getElementById("contract-print");
-      if (!contractElement) throw new Error("Contract element not found");
-      const contractClone = contractElement.cloneNode(true);
+  try {
+    toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const contractElement = document.getElementById("contract-print");
+    if (!contractElement) throw new Error("Contract element not found");
+    const contractClone = contractElement.cloneNode(true);
 
-      if (includeSignatures) {
-        const signatureBlocks = contractClone.querySelectorAll('.signature-block');
-        if (signatureBlocks.length >= 1) {
-          const agentBlock = signatureBlocks[0];
-          const signatureBox = agentBlock.querySelector('.signature-box');
-          if (signatureBox) {
-            signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
-          }
+    if (includeSignatures) {
+      const signatureBlocks = contractClone.querySelectorAll('.signature-block');
+      if (signatureBlocks.length >= 1) {
+        const agentBlock = signatureBlocks[0];
+        const signatureBox = agentBlock.querySelector('.signature-box');
+        if (signatureBox) {
+          signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
         }
       }
-
-      contractClone.style.width = "210mm";
-      contractClone.style.height = "auto";
-      contractClone.style.padding = "15px";
-      contractClone.style.margin = "0";
-      contractClone.style.boxSizing = "border-box";
-      contractClone.style.backgroundColor = "white";
-      contractClone.style.position = "absolute";
-      contractClone.style.top = "-9999px";
-      contractClone.style.left = "0";
-      document.body.appendChild(contractClone);
-      const images = contractClone.querySelectorAll("img");
-      await Promise.all(Array.from(images).map(img => {
-        if (img.complete) return Promise.resolve();
-        return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
-      }));
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-      document.body.removeChild(contractClone);
-      const imgData = canvas.toDataURL("image/png", 1.0);
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
-      doc.save(`contrat-location-${reservation.id}.pdf`);
-      toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
-    } catch (error) {
-      console.error(error);
-      toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
     }
-  };
+
+    contractClone.style.width = "210mm";
+    contractClone.style.height = "auto";
+    contractClone.style.padding = "15px";
+    contractClone.style.margin = "0";
+    contractClone.style.boxSizing = "border-box";
+    contractClone.style.backgroundColor = "white";
+    contractClone.style.position = "absolute";
+    contractClone.style.top = "-9999px";
+    contractClone.style.left = "0";
+    document.body.appendChild(contractClone);
+    const images = contractClone.querySelectorAll("img");
+    await Promise.all(Array.from(images).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+    }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    document.body.removeChild(contractClone);
+    const imgData = canvas.toDataURL("image/png", 1.0);
+    const imgWidth = pageWidth - 20;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+    
+    const filename = `contrat-location-${reservation.id}.pdf`;
+    downloadAndOpenPDF(doc, filename); // <-- remplace doc.save()
+    toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
+  } catch (error) {
+    console.error(error);
+    toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
+  }
+};
 
   const handlePrintClick = () => {
     setShowPrintOptions(true);
@@ -2054,58 +2304,60 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
   };
 
   const generateContractPDF = async (reservation, includeSignatures = false) => {
-    try {
-      toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
-      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const contractElement = document.getElementById("contract-print");
-      if (!contractElement) {
-        console.error("Contract element not found");
-        toast.error("Erreur: Élément du contrat non trouvé", { id: "contract-pdf" });
-        return;
-      }
-      const contractClone = contractElement.cloneNode(true);
+  try {
+    toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const contractElement = document.getElementById("contract-print");
+    if (!contractElement) {
+      console.error("Contract element not found");
+      toast.error("Erreur: Élément du contrat non trouvé", { id: "contract-pdf" });
+      return;
+    }
+    const contractClone = contractElement.cloneNode(true);
 
-      if (includeSignatures) {
-        const signatureBlocks = contractClone.querySelectorAll('.signature-block');
-        if (signatureBlocks.length >= 1) {
-          const agentBlock = signatureBlocks[0];
-          const signatureBox = agentBlock.querySelector('.signature-box');
-          if (signatureBox) {
-            signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
-          }
+    if (includeSignatures) {
+      const signatureBlocks = contractClone.querySelectorAll('.signature-block');
+      if (signatureBlocks.length >= 1) {
+        const agentBlock = signatureBlocks[0];
+        const signatureBox = agentBlock.querySelector('.signature-box');
+        if (signatureBox) {
+          signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
         }
       }
-
-      contractClone.style.width = "210mm";
-      contractClone.style.height = "auto";
-      contractClone.style.padding = "15px";
-      contractClone.style.margin = "0";
-      contractClone.style.boxSizing = "border-box";
-      contractClone.style.backgroundColor = "white";
-      contractClone.style.position = "absolute";
-      contractClone.style.top = "-9999px";
-      contractClone.style.left = "0";
-      document.body.appendChild(contractClone);
-      const images = contractClone.querySelectorAll("img");
-      await Promise.all(Array.from(images).map(img => {
-        if (img.complete) return Promise.resolve();
-        return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
-      }));
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-      document.body.removeChild(contractClone);
-      const imgData = canvas.toDataURL("image/png", 1.0);
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
-      doc.save(`contrat-location-${reservation.id}.pdf`);
-      toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
-    } catch (error) {
-      console.error("Error generating contract:", error);
-      toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
     }
-  };
+
+    contractClone.style.width = "210mm";
+    contractClone.style.height = "auto";
+    contractClone.style.padding = "15px";
+    contractClone.style.margin = "0";
+    contractClone.style.boxSizing = "border-box";
+    contractClone.style.backgroundColor = "white";
+    contractClone.style.position = "absolute";
+    contractClone.style.top = "-9999px";
+    contractClone.style.left = "0";
+    document.body.appendChild(contractClone);
+    const images = contractClone.querySelectorAll("img");
+    await Promise.all(Array.from(images).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+    }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    document.body.removeChild(contractClone);
+    const imgData = canvas.toDataURL("image/png", 1.0);
+    const imgWidth = pageWidth - 20;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+    
+    const filename = `contrat-location-${reservation.id}.pdf`;
+    downloadAndOpenPDF(doc, filename); // <-- remplace doc.save()
+    toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
+  } catch (error) {
+    console.error("Error generating contract:", error);
+    toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
+  }
+};
 
   const handleViewContract = (reservation) => {
     setSelectedContractReservation(reservation);

@@ -24,8 +24,7 @@ import {
   Mail as MailIcon, AlertTriangle as AlertIcon, CheckCircle as SuccessIcon,
   XCircle as ErrorIcon, Info as InfoIcon, Sparkles, Star, Activity, Upload,
   FolderOpen, Edit, Save as SaveIcon, Zap, Loader, ChevronLeft,
-  ChevronUp, Link2
-} from "lucide-react";
+  ChevronUp, Link2, Check,CalendarClock ,AlarmClock } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -2572,7 +2571,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, color, onClick, clickabl
   </div>
 );
 
-// ==================== Component: MatriculeCategoryCard (modifié) ====================
+// ==================== Composant MatriculeCategoryCard (version améliorée) ====================
 const MatriculeCategoryCard = ({
   title,
   icon: Icon,
@@ -2586,7 +2585,8 @@ const MatriculeCategoryCard = ({
   expanded,
   onToggleExpand,
   loading,
-  badge
+  badge,
+  onComplete
 }) => {
   const [isExpanded, setIsExpanded] = useState(expanded || false);
   const [showAll, setShowAll] = useState(false);
@@ -2649,14 +2649,13 @@ const MatriculeCategoryCard = ({
     return diffDays;
   };
 
-  // PDF export with formatted dates
+  // Fonction PDF (inchangée)
   const downloadPDF = () => {
     const filtered = filteredMatricules;
     if (filtered.length === 0) {
       toast.warning("Aucune donnée à exporter");
       return;
     }
-
     const formatDateDisplay = (dateStr) => {
       if (!dateStr) return '';
       const d = new Date(dateStr);
@@ -2666,11 +2665,9 @@ const MatriculeCategoryCard = ({
       const year = d.getFullYear();
       return `${day}/${month}/${year}`;
     };
-
     const doc = new jsPDF('p', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-
     doc.setFontSize(16);
     doc.setTextColor(30, 41, 59);
     doc.text('SMAITI CAR', pageWidth / 2, 20, { align: 'center' });
@@ -2679,7 +2676,6 @@ const MatriculeCategoryCard = ({
     doc.text('LOCATION DE VOITURE', pageWidth / 2, 28, { align: 'center' });
     doc.setDrawColor(212, 175, 55);
     doc.line(20, 32, pageWidth - 20, 32);
-
     doc.setFontSize(14);
     doc.setTextColor(15, 23, 42);
     doc.text(`Liste des matricules - ${title}`, pageWidth / 2, 42, { align: 'center' });
@@ -2687,7 +2683,6 @@ const MatriculeCategoryCard = ({
     doc.setTextColor(100, 116, 139);
     doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, pageWidth / 2, 50, { align: 'center' });
     doc.text(`Total : ${filtered.length} matricule(s)`, pageWidth / 2, 56, { align: 'center' });
-
     const tableData = filtered.map(mat => [
       mat.matricule_code || '',
       `${mat.car?.brand || ''} ${mat.car?.model || ''}`.trim(),
@@ -2696,7 +2691,6 @@ const MatriculeCategoryCard = ({
       formatDateDisplay(mat.currentReservation?.end_date),
       mat.status === 'active' ? 'Actif' : 'Inactif'
     ]);
-
     autoTable(doc, {
       head: [['Matricule', 'Marque/Modèle', 'Km', 'Client', 'Date retour', 'Statut']],
       body: tableData,
@@ -2727,11 +2721,9 @@ const MatriculeCategoryCard = ({
       margin: { left: 15, right: 15 },
       tableWidth: 'auto',
     });
-
     doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
     doc.text('SMAITI CAR — Document généré automatiquement.', pageWidth / 2, pageHeight - 10, { align: 'center' });
-
     doc.save(`matricules_${title.replace(/\s/g, '_')}.pdf`);
     toast.success("PDF téléchargé");
   };
@@ -2752,7 +2744,6 @@ const MatriculeCategoryCard = ({
 
       {isExpanded && (
         <div className="card-dropdown">
-          {/* ===== FIXED: one‑line search bar ===== */}
           <div className="dropdown-search" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
             <Search size={14} className="search-icon" style={{ flexShrink: 0 }} />
             <input
@@ -2873,7 +2864,7 @@ const MatriculeCategoryCard = ({
                                 onReserve(mat);
                               }}
                             >
-                              <span className="reserve-status">🔵</span> Réserver
+                              <Plus size={12} /> Réserver
                             </button>
                             <button
                               className="btn-confirm"
@@ -2882,7 +2873,7 @@ const MatriculeCategoryCard = ({
                                 onConfirmDirect(mat);
                               }}
                             >
-                              ✅ Confirmer
+                              <Check size={12} /> Confirmer
                             </button>
                           </>
                         )}
@@ -2895,7 +2886,7 @@ const MatriculeCategoryCard = ({
                                 onConfirm(mat.currentReservation);
                               }}
                             >
-                              ✅ Confirmer
+                              <Check size={12} /> Confirmer
                             </button>
                             <button
                               className="btn-cancel"
@@ -2904,12 +2895,25 @@ const MatriculeCategoryCard = ({
                                 onCancel(mat.currentReservation);
                               }}
                             >
-                              ❌ Annuler
+                              <X size={12} /> Annuler
                             </button>
                           </>
                         )}
-                        {isRetourImminent && (
-                          <span className="return-badge">⏳ Retour bientôt</span>
+                        {(title === 'Retour imminent' || title === 'En retard') && 
+                          onComplete && mat.currentReservation && 
+                          (mat.currentReservation.status === 'confirmed' || mat.currentReservation.status === 'retard') && (
+                            <button
+                              className="btn-complete"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onComplete(mat.currentReservation);
+                              }}
+                            >
+                              <CheckCircle size={12} /> Terminer
+                            </button>
+                        )}
+                        {title === 'En panne (Accident)' && (
+                          <span className="return-badge">⛔ En réparation</span>
                         )}
                       </div>
                     </div>
@@ -2936,7 +2940,6 @@ const MatriculeCategoryCard = ({
     </div>
   );
 };
-
 // ==================== Component: ReserveModal ====================
 const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) => {
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -3439,6 +3442,13 @@ export default function AdminDashboard() {
   // Direct Confirm state
   const [confirmDirectModalOpen, setConfirmDirectModalOpen] = useState(false);
   const [selectedMatriculeForDirectConfirm, setSelectedMatriculeForDirectConfirm] = useState(null);
+
+  // === État pour le modal de terminaison ===
+  const [completeModalOpen, setCompleteModalOpen] = useState(false);
+  const [completeReservationId, setCompleteReservationId] = useState(null);
+  const [kilometrageRetour, setKilometrageRetour] = useState('');
+  const [returnDate, setReturnDate] = useState('');
+  const [returnTime, setReturnTime] = useState('');
 
   // Filter state
   const [selectedMonth, setSelectedMonth] = useState('juin');
@@ -4028,6 +4038,44 @@ export default function AdminDashboard() {
     } catch (error) {
       toast.error('Erreur lors de l\'annulation');
       console.error(error);
+    }
+  };
+
+  // === Fonctions pour la terminaison ===
+  const handleComplete = (reservation) => {
+    setCompleteReservationId(reservation.id);
+    const kmRetour = reservation.kilometrage_entree || reservation.matricule?.kilometrage || '';
+    setKilometrageRetour(kmRetour);
+    setReturnDate(reservation.end_date ? reservation.end_date.split('T')[0] : '');
+    setReturnTime(reservation.end_time || '18:00');
+    setCompleteModalOpen(true);
+  };
+
+  const confirmComplete = async () => {
+    if (!kilometrageRetour || isNaN(kilometrageRetour) || parseFloat(kilometrageRetour) < 0) {
+      toast.error("Veuillez entrer un kilométrage retour valide.");
+      return;
+    }
+    try {
+      await dispatch(updateReservation({
+        id: completeReservationId,
+        data: {
+          status: 'completed',
+          end_date: returnDate,
+          end_time: returnTime,
+          kilometrage_entree: parseFloat(kilometrageRetour)
+        }
+      })).unwrap();
+      toast.success("Réservation terminée avec succès !");
+      await dispatch(fetchReservations(true));
+      await dispatch(refreshMatricules(true));
+      setCompleteModalOpen(false);
+      setCompleteReservationId(null);
+      setKilometrageRetour('');
+      setReturnDate('');
+      setReturnTime('');
+    } catch (error) {
+      toast.error(error.message || "Erreur lors de la terminaison");
     }
   };
 
@@ -5018,7 +5066,7 @@ export default function AdminDashboard() {
           text-align: center;
         }
 
-        /* Matricule Cards */
+        /* Matricule Cards - Styles améliorés pour les boutons */
         .matricule-category-card {
           background: white;
           border-radius: 16px;
@@ -5207,50 +5255,82 @@ export default function AdminDashboard() {
           gap: 0.4rem;
           flex-wrap: wrap;
         }
+        /* Boutons unifiés */
         .matricule-category-card .btn-reserve {
           background: #eab308;
           border: none;
           color: white;
-          padding: 0.2rem 0.8rem;
+          padding: 0.25rem 0.8rem;
           border-radius: 1.5rem;
           font-size: 0.65rem;
           font-weight: 600;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: all 0.2s ease;
           display: inline-flex;
           align-items: center;
           gap: 0.25rem;
         }
         .matricule-category-card .btn-reserve:hover {
           background: #ca8a04;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(234, 179, 8, 0.3);
         }
         .matricule-category-card .btn-confirm {
           background: #22c55e;
           border: none;
           color: white;
-          padding: 0.2rem 0.8rem;
+          padding: 0.25rem 0.8rem;
           border-radius: 1.5rem;
           font-size: 0.65rem;
           font-weight: 600;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
         }
         .matricule-category-card .btn-confirm:hover {
           background: #16a34a;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
         }
         .matricule-category-card .btn-cancel {
           background: #ef4444;
           border: none;
           color: white;
-          padding: 0.2rem 0.8rem;
+          padding: 0.25rem 0.8rem;
           border-radius: 1.5rem;
           font-size: 0.65rem;
           font-weight: 600;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
         }
         .matricule-category-card .btn-cancel:hover {
           background: #dc2626;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+        }
+        .matricule-category-card .btn-complete {
+          background: #3b82f6;
+          border: none;
+          color: white;
+          padding: 0.25rem 0.8rem;
+          border-radius: 1.5rem;
+          font-size: 0.65rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+        }
+        .matricule-category-card .btn-complete:hover {
+          background: #2563eb;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
         }
         .matricule-category-card .return-badge {
           display: inline-flex;
@@ -5401,7 +5481,8 @@ export default function AdminDashboard() {
           }
           .matricule-category-card .btn-reserve,
           .matricule-category-card .btn-confirm,
-          .matricule-category-card .btn-cancel {
+          .matricule-category-card .btn-cancel,
+          .matricule-category-card .btn-complete {
             width: 100%;
             text-align: center;
             justify-content: center;
@@ -5511,6 +5592,8 @@ export default function AdminDashboard() {
           .matricule-category-card .btn-confirm:hover { background: #15803d; }
           .matricule-category-card .btn-cancel { background: #dc2626; }
           .matricule-category-card .btn-cancel:hover { background: #b91c1c; }
+          .matricule-category-card .btn-complete { background: #2563eb; }
+          .matricule-category-card .btn-complete:hover { background: #1d4ed8; }
           .matricule-category-card .return-badge { background: #422006; color: #fbbf24; }
           .matricule-category-card .btn-show-more { color: #60a5fa; }
           .matricule-category-card .btn-show-more:hover { background: #1e3a5f; }
@@ -5633,56 +5716,58 @@ export default function AdminDashboard() {
         <div className="stats-section">
           <div className="category-title"><CreditCard size={18} className="category-icon" /> Gestion des Immatriculations</div>
           <div className="matricule-cards-grid">
-            <MatriculeCategoryCard
-              title="Disponibles"
-              icon={CarFront}
-              color="blue"
-              matricules={disponiblesWithRes}
-              onReserve={handleReserveClick}
-              onConfirmDirect={handleDirectConfirm}
-              expanded={expandedCategories.disponibles}
-              onToggleExpand={() => toggleCategory('disponibles')}
-              badge={disponiblesWithRes.length}
-            />
-            <MatriculeCategoryCard
-              title="En attente de confirmation"
-              icon={ClockIcon}
-              color="yellow"
-              matricules={enAttenteWithRes}
-              onConfirm={handleConfirmPending}
-              onCancel={handleCancelPending}
-              expanded={expandedCategories.enAttente}
-              onToggleExpand={() => toggleCategory('enAttente')}
-              badge={enAttenteWithRes.length}
-            />
-            <MatriculeCategoryCard
-              title="Retour imminent"
-              icon={CalendarCheck}
-              color="green"
-              matricules={retourImminentWithRes}
-              expanded={expandedCategories.retourImminent}
-              onToggleExpand={() => toggleCategory('retourImminent')}
-              badge={retourImminentWithRes.length}
-            />
-            <MatriculeCategoryCard
-              title="En retard"
-              icon={AlertOctagon}
-              color="red"
-              matricules={enRetardWithRes}
-              expanded={expandedCategories.enRetard}
-              onToggleExpand={() => toggleCategory('enRetard')}
-              badge={enRetardWithRes.length}
-            />
-            <MatriculeCategoryCard
-              title="En panne (Accident)"
-              icon={AlertTriangle}
-              color="purple"
-              matricules={enPanneWithRes}
-              expanded={expandedCategories.enPanne}
-              onToggleExpand={() => toggleCategory('enPanne')}
-              badge={enPanneWithRes.length}
-            />
-          </div>
+  <MatriculeCategoryCard
+    title="Disponibles"
+    icon={CheckCircle}
+    color="blue"
+    matricules={disponiblesWithRes}
+    onReserve={handleReserveClick}
+    onConfirmDirect={handleDirectConfirm}
+    expanded={expandedCategories.disponibles}
+    onToggleExpand={() => toggleCategory('disponibles')}
+    badge={disponiblesWithRes.length}
+  />
+  <MatriculeCategoryCard
+    title="En attente de confirmation"
+    icon={Clock}
+    color="yellow"
+    matricules={enAttenteWithRes}
+    onConfirm={handleConfirmPending}
+    onCancel={handleCancelPending}
+    expanded={expandedCategories.enAttente}
+    onToggleExpand={() => toggleCategory('enAttente')}
+    badge={enAttenteWithRes.length}
+  />
+  <MatriculeCategoryCard
+    title="Retour imminent"
+    icon={CalendarClock}
+    color="green"
+    matricules={retourImminentWithRes}
+    expanded={expandedCategories.retourImminent}
+    onToggleExpand={() => toggleCategory('retourImminent')}
+    badge={retourImminentWithRes.length}
+    onComplete={handleComplete}
+  />
+  <MatriculeCategoryCard
+    title="En retard"
+    icon={AlarmClock}
+    color="red"
+    matricules={enRetardWithRes}
+    expanded={expandedCategories.enRetard}
+    onToggleExpand={() => toggleCategory('enRetard')}
+    badge={enRetardWithRes.length}
+    onComplete={handleComplete}
+  />
+  <MatriculeCategoryCard
+    title="En panne (Accident)"
+    icon={Wrench}
+    color="purple"
+    matricules={enPanneWithRes}
+    expanded={expandedCategories.enPanne}
+    onToggleExpand={() => toggleCategory('enPanne')}
+    badge={enPanneWithRes.length}
+  />
+</div>
         </div>
 
         {/* ====== Clients & Utilisateurs ====== */}
@@ -5888,6 +5973,65 @@ export default function AdminDashboard() {
           cars={cars} 
           onConfirm={handleDirectConfirmReservation}
         />
+
+        {/* ====== MODAL DE TERMINAISON (style Réserver) ====== */}
+{completeModalOpen && (
+  <div className="modal-overlay" onClick={() => setCompleteModalOpen(false)}>
+    <div className="modal" style={{ maxWidth: '500px' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-header">
+        <h2 className="modal-title">
+          <CheckCircle size={20} style={{ color: '#3b82f6' }} /> Terminer la réservation
+        </h2>
+        <button onClick={() => setCompleteModalOpen(false)} className="modal-close">
+          <X size={20} />
+        </button>
+      </div>
+      <div style={{ padding: '1.5rem' }}>
+        <div className="form-group">
+          <label>Date de retour</label>
+          <input
+            type="date"
+            className="form-control"
+            value={returnDate}
+            onChange={(e) => setReturnDate(e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label>Heure de retour</label>
+          <input
+            type="time"
+            className="form-control"
+            value={returnTime}
+            onChange={(e) => setReturnTime(e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label>Km retour *</label>
+          <input
+            type="number"
+            className="form-control"
+            value={kilometrageRetour}
+            onChange={(e) => setKilometrageRetour(e.target.value)}
+            placeholder="Ex: 12345"
+            step="0.01"
+          />
+        </div>
+      </div>
+      <div className="modal-actions-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+        <button onClick={() => setCompleteModalOpen(false)} className="btn btn-outline">
+          Annuler
+        </button>
+        <button
+          onClick={confirmComplete}
+          className="btn btn-primary"
+          disabled={!kilometrageRetour || isNaN(kilometrageRetour) || parseFloat(kilometrageRetour) < 0}
+        >
+          <CheckCircle size={16} /> Terminer
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       </div>
     </>
   );
