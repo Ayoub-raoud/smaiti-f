@@ -8,7 +8,10 @@ import {
   updateReservation, deleteReservation, createReservation,
   checkLateReservations, selectReservations, selectCars,
   selectMatricules, selectClients, selectReservationsLoading,
-  selectUser, refreshMatricules, createClient, api
+  selectUser, refreshMatricules, createClient, api,
+  fetchSousLocations,
+  createSousLocation,
+  selectSousLocations,
 } from "../../Redux/store";
 import PaginationControls from '../../components/PaginationControls';
 import { toast } from "sonner";
@@ -20,7 +23,7 @@ import {
   Image as ImageIcon, FileImage, Trash, Copy, CheckCircle, Gauge,
   Settings, EyeOff, Minus, Shield, Truck, FileCheck, PenTool, Building2,
   CreditCard as CreditCardIcon, CalendarRange, Fuel, Navigation, Upload,
-  AlertTriangle, XCircle, Sparkles, Star, Heart, Award, Gem, Tag,
+  AlertTriangle, XCircle, Sparkles, Star, Heart, Award, Gem, Tag,Home,Coins,
   Wrench, Key, Briefcase, ArrowUpDown, ArrowUp, ArrowDown,
   MessageCircle, Link2
 } from "lucide-react";
@@ -29,25 +32,20 @@ import html2canvas from "html2canvas";
 import checklistImage from "../../assets/checklist.png";
 import logoImage from "../../assets/logo.png";
 import agentSignatureImage from "../../assets/cache.png";
-// Fonction pour télécharger et ouvrir le PDF
+
 const downloadAndOpenPDF = (doc, filename) => {
   const pdfBlob = doc.output('blob');
   const url = URL.createObjectURL(pdfBlob);
-
-  // Téléchargement
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-
-  // Ouverture dans un nouvel onglet
   window.open(url, '_blank');
-
-  // Libération de l'URL après un délai
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
+
 // ==================== ContractDisplayOptions ====================
 const ContractDisplayOptions = ({ options, onOptionChange, onResetAll }) => {
   const sections = [
@@ -145,7 +143,6 @@ const ObservationBox = ({ title, isHalf = false, children, option }) => {
   );
 };
 
-// ==================== SignatureBlock (supports image signature) ====================
 const SignatureBlock = ({ label, signature = "", option }) => {
   if (option === "hide") return null;
   const isImage = typeof signature === 'string' && signature.startsWith('data:image/');
@@ -165,7 +162,7 @@ const SignatureBlock = ({ label, signature = "", option }) => {
   );
 };
 
-// ==================== ContractLocation (version avec signature de taille fixe) ====================
+// ==================== ContractLocation ====================
 const ContractLocation = ({
   reservation,
   showSignatures = false,
@@ -316,7 +313,6 @@ const ContractLocation = ({
       <table className="contract-content-table" cellPadding="0" cellSpacing="0">
         <tbody>
           <tr>
-            {/* Left Column */}
             <td className="contract-left-col">
               <div className="contract-section">
                 <div className="section-title-print">LOCATAIRE</div>
@@ -401,7 +397,6 @@ const ContractLocation = ({
               </div>
             </td>
 
-            {/* Right Column */}
             <td className="contract-right-col">
               <div className="contract-section">
                 <div className="section-title-print">VÉHICULE</div>
@@ -445,7 +440,6 @@ const ContractLocation = ({
         </tbody>
       </table>
 
-      {/* Checklist */}
       <div className="contract-section checklist-section-print">
         <div className="section-title-print">CHECKLIST - ÉTAT DU VÉHICULE</div>
         <div className="checklist-content">
@@ -476,7 +470,6 @@ const ContractLocation = ({
         </div>
       </div>
 
-      {/* ===== SECTION CLAUSE KILOMÉTRAGE ===== */}
       <div className="kilometrage-clause-section">
         <div className="kilometrage-clause-title">⚠️ IMPORTANT - CLAUSE DE DÉPASSEMENT DE KILOMÉTRAGE</div>
         <div className="kilometrage-clause-text">
@@ -484,7 +477,6 @@ const ContractLocation = ({
         </div>
       </div>
 
-      {/* Observations (sans la clause) */}
       <div className="observations-row-print">
         <ObservationBox title="Observations" option={observationsOption}>
           <div className="observation-text">
@@ -511,14 +503,12 @@ const ContractLocation = ({
         </ObservationBox>
       </div>
 
-      {/* Signatures */}
       <div className="signatures-row-print">
         <SignatureBlock label="Signature de l'agent" signature={showSignatures ? signatures.agent : ""} option={signaturesOption} />
         <SignatureBlock label="Signature du locataire" signature={showSignatures ? locataireSignature : ""} option={signaturesOption} />
         <SignatureBlock label="Signature 2ème conducteur" signature={showSignatures ? signatures.secondConducteur : ""} option={signaturesOption} />
       </div>
 
-      {/* Footer */}
       <div className="contract-footer-print">
         <div className="footer-line">
           <span style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
@@ -553,7 +543,6 @@ const ContractLocation = ({
           line-height: 1.5;
           padding: 0 6px;
         }
-        /* === Header === */
         .contract-header-table {
           width: 100%;
           border-bottom: 2px solid #d4af37;
@@ -588,26 +577,39 @@ const ContractLocation = ({
           padding-bottom: 6px;
           color: #0f172a;
         }
-        /* === Two columns === */
         .contract-content-table { width: 100%; }
         .contract-left-col { width: 50%; vertical-align: top; padding-right: 12px; }
         .contract-right-col { width: 50%; vertical-align: top; padding-left: 12px; }
         .contract-section {
           margin-bottom: 8px;
-          border: 1px solid #94a3b8;
+          border: 1px solid #000000;
           border-radius: 8px;
           overflow: hidden;
           background: white;
         }
         .section-title-print {
-          background: #f8fafc;
+          background: #cbd5e1;
           padding: 6px 12px;
           font-weight: 700;
           font-size: 10px;
           text-transform: uppercase;
           letter-spacing: 0.5px;
-          border-bottom: 1px solid #94a3b8;
+          border-bottom: 1px solid #000000;
           color: #1e293b;
+        }
+        .checklist-section-print .checklist-table,
+        .checklist-section-print .doc-item,
+        .observation-box,
+        .signature-box,
+        .kilometrage-clause-section {
+          border-color: #000000 !important;
+        }
+        .checklist-section-print .section-title-print {
+          background: #cbd5e1 !important;
+        }
+        .obs-title {
+          background: #cbd5e1 !important;
+          border-bottom: 1px solid #000000;
         }
         .section-content { padding: 8px 12px; }
         .field-row {
@@ -632,7 +634,6 @@ const ContractLocation = ({
         .total-row .total-amount { font-weight: 800; font-size: 12px; color: #b8860b; }
         .remaining-amount { font-weight: 700; color: #dc2626; }
         .pricing-section { border-left: 4px solid #d4af37; }
-        /* === Checklist === */
         .checklist-section-print { margin: 8px 0; }
         .checklist-table { width: 100%; margin-bottom: 8px; }
         .checklist-cell { width: 50%; text-align: center; vertical-align: top; padding: 0 6px; }
@@ -682,7 +683,6 @@ const ContractLocation = ({
           background: #fafafa;
           padding: 4px;
         }
-        /* === Clause kilométrage === */
         .kilometrage-clause-section {
           margin: 10px 0;
           padding: 10px 16px;
@@ -708,7 +708,6 @@ const ContractLocation = ({
           line-height: 1.5;
           font-weight: 500;
         }
-        /* === Observations === */
         .observations-row-print { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; }
         .observation-box {
           flex: 1;
@@ -733,13 +732,12 @@ const ContractLocation = ({
           min-height: 50px;
           color: #334155;
         }
-        /* === Signatures (hauteur fixe) === */
         .signatures-row-print { display: flex; gap: 20px; margin: 10px 0; }
         .signature-block { flex: 1; text-align: center; }
         .signature-label { font-size: 9px; font-weight: 700; margin-bottom: 6px; color: #475569; }
         .signature-box {
           border: 1px solid #94a3b8;
-          height: 50px;                /* hauteur fixe */
+          height: 50px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -761,7 +759,6 @@ const ContractLocation = ({
           text-overflow: ellipsis;
           max-width: 100%;
         }
-        /* === Footer === */
         .contract-footer-print {
           margin-top: 8px;
           padding-top: 6px;
@@ -780,7 +777,6 @@ const ContractLocation = ({
         }
         .contract-number-box.stylish .contract-number-label { font-size: 9px; color: #92400e; letter-spacing: 1px; }
         .contract-number-box.stylish .contract-number-value { font-size: 20px; font-weight: 800; color: #1a1a2e; }
-        /* === Print === */
         @media print {
           .contract-container-print { margin: 0; padding: 0; background: white; }
           .checkbox-square.checked { background: black !important; border-color: black !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -789,17 +785,9 @@ const ContractLocation = ({
           .contract-number-box.stylish { background: #fefce8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .kilometrage-clause-section { background: #fefce8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
-          .contract-container-print .field-value {
-  font-weight: 600; /* valeurs en gras */
-}
-
-.contract-container-print .observation-content {
-  font-weight: 500; /* observations en demi-gras */
-}
-
-.contract-container-print .kilometrage-clause-text {
-  font-weight: 600; /* clause kilométrage en gras */
-}
+        .contract-container-print .field-value { font-weight: 600; }
+        .contract-container-print .observation-content { font-weight: 500; }
+        .contract-container-print .kilometrage-clause-text { font-weight: 600; }
       `}</style>
     </div>
   );
@@ -960,11 +948,106 @@ const SecondDriverSearch = ({ clients, selectedClientId, selectedSecondDriverId,
   );
 };
 
-// ==================== ReservationForm ====================
+// ==================== SousLocationSearch (copied from AdminReservations) ====================
+const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, canCreate = false }) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Guard against non-array
+  const list = Array.isArray(sousLocations) ? sousLocations : [];
+  const filtered = useMemo(() => {
+    if (!searchTerm.trim()) return list;
+    const term = searchTerm.toLowerCase().trim();
+    return list.filter(sl => sl.name.toLowerCase().includes(term));
+  }, [list, searchTerm]);
+
+  const selected = list.find(sl => sl.id === selectedId);
+
+  return (
+    <div className="sous-location-search" ref={wrapperRef}>
+      <div className="inline-search-input-wrapper" onClick={() => setIsOpen(true)}>
+        <Search size={16} />
+        <input
+          type="text"
+          className="inline-input"
+          placeholder="Rechercher une sous‑location..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onFocus={() => setIsOpen(true)}
+        />
+        {selected && !searchTerm && (
+          <span className="selected-badge">{selected.name}</span>
+        )}
+      </div>
+
+      {isOpen && filtered.length > 0 && (
+        <div className="inline-results">
+          {filtered.map(sl => (
+            <div
+              key={sl.id}
+              className={`inline-result-item ${selectedId === sl.id ? 'active' : ''}`}
+              onClick={() => {
+                onSelect(sl.id);
+                setSearchTerm("");
+                setIsOpen(false);
+              }}
+            >
+              <div className="inline-result-avatar"><Tag size={16} /></div>
+              <div className="inline-result-info">
+                <strong>{sl.name}</strong>
+                {sl.description && <div className="inline-result-details">{sl.description}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isOpen && filtered.length === 0 && (
+        <div className="inline-empty-state">
+          <p>Aucune sous‑location trouvée.</p>
+        </div>
+      )}
+
+      {canCreate && (
+        <button
+          type="button"
+          className="inline-outline-btn"
+          style={{ marginTop: '0.5rem' }}
+          onClick={onCreateNew}
+        >
+          <Plus size={14} /> Créer une sous‑location
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ==================== ReservationForm (MODIFIED) ====================
 const ReservationForm = ({
   isOpen, onClose, onSubmit, editingReservation, clients, cars, matricules, submitting
 }) => {
   const dispatch = useDispatch();
+  const user = useSelector(selectUser);
+  const myPermissions = useSelector(state => state.permissions?.myPermissions || []);
+  const canCreateSousLocation = user && (
+    user.role === 'admin' ||
+    user.role === 'superadmin' ||
+    (Array.isArray(myPermissions) && myPermissions.includes('sous-locations'))
+  );
+
+  const sousLocations = useSelector(selectSousLocations);
+
   const [formData, setFormData] = useState({
     start_date: new Date().toISOString().split("T")[0],
     end_date: "",
@@ -983,7 +1066,9 @@ const ReservationForm = ({
     notes: "",
     reception_notes: "",
     kilometrage_sortie: "",
-    kilometrage_entree: ""
+    kilometrage_entree: "",
+    sous_location_id: "",
+    can_extend_days: false,
   });
 
   const [clientSearch, setClientSearch] = useState("");
@@ -1005,6 +1090,11 @@ const ReservationForm = ({
     cin_number: "", driver_license_number: "", date_naissance: "",
     lieu_naissance: "", cin_delivre_le: "", permis_delivre_le: ""
   });
+
+  // Sous-location modal state
+  const [showCreateSousLocationModal, setShowCreateSousLocationModal] = useState(false);
+  const [newSousLocationName, setNewSousLocationName] = useState('');
+  const [newSousLocationDesc, setNewSousLocationDesc] = useState('');
 
   const filteredClients = useMemo(() => {
     if (!clientSearch.trim() || isNewClient || !clients || !Array.isArray(clients)) return [];
@@ -1037,7 +1127,7 @@ const ReservationForm = ({
     setFilteredMatricules(filtered);
   }, [matriculeSearch, matricules]);
 
-  // ===== MODIFIED: compute rental days exclusively =====
+  // 1) Charger une réservation en édition
   useEffect(() => {
     if (editingReservation) {
       const computeRentalDays = (start, end) => {
@@ -1072,7 +1162,9 @@ const ReservationForm = ({
         notes: editingReservation.notes || "",
         reception_notes: editingReservation.reception_notes || "",
         kilometrage_sortie: editingReservation.kilometrage_sortie || "",
-        kilometrage_entree: editingReservation.kilometrage_entree || ""
+        kilometrage_entree: editingReservation.kilometrage_entree || "",
+        sous_location_id: editingReservation.sous_location_id || "",
+        can_extend_days: editingReservation.can_extend_days || false,
       });
       setPaymentHistory(
         Array.isArray(editingReservation.payment_history)
@@ -1099,6 +1191,7 @@ const ReservationForm = ({
     }
   }, [editingReservation, clients, matricules]);
 
+  // 2) Filtrer les matricules par car_id
   useEffect(() => {
     if (formData.car_id) {
       const filtered = matricules.filter(m => m.car_id == formData.car_id);
@@ -1108,6 +1201,7 @@ const ReservationForm = ({
     }
   }, [formData.car_id, matricules]);
 
+  // 3) Mettre à jour kilometrage_sortie automatiquement
   useEffect(() => {
     if (formData.matricule_id) {
       const selectedMatriculeObj = matricules.find(m => m.id == formData.matricule_id);
@@ -1117,9 +1211,7 @@ const ReservationForm = ({
     }
   }, [formData.matricule_id, matricules]);
 
-  // ============================================================
-  // FIXED: Auto-calculate total only when creating new
-  // ============================================================
+  // 4) Auto-calcul du total (uniquement en création)
   useEffect(() => {
     if (!editingReservation && formData.car_id && formData.rental_days) {
       const car = cars.find(c => c.id == formData.car_id);
@@ -1130,9 +1222,7 @@ const ReservationForm = ({
     }
   }, [formData.car_id, formData.rental_days, cars, editingReservation]);
 
-  // ============================================================
-  // FIXED: Always update remaining amount
-  // ============================================================
+  // 5) Mise à jour du montant restant
   useEffect(() => {
     const total = parseFloat(formData.total_price) || 0;
     const paid = parseFloat(formData.amount_paid) || 0;
@@ -1140,31 +1230,39 @@ const ReservationForm = ({
     setFormData(prev => ({ ...prev, remaining_amount: remaining }));
   }, [formData.total_price, formData.amount_paid]);
 
-  // ------------------------------------------------------------
-  // NEW: Recalculate total based on current car and days (manual)
-  // ------------------------------------------------------------
-  const handleRecalculateTotal = () => {
-    if (!formData.car_id || !formData.rental_days) {
-      toast.warning("Veuillez sélectionner un véhicule et définir le nombre de jours.");
-      return;
-    }
-    const car = cars.find(c => c.id == formData.car_id);
-    if (car) {
-      const total = car.price_per_day * formData.rental_days;
-      setFormData(prev => ({ ...prev, total_price: total }));
-      toast.success("Prix total recalculé.");
-    } else {
-      toast.error("Véhicule non trouvé.");
-    }
-  };
+  // =============== NOUVEAU : Auto-remplir les heures selon le statut (HH:MM) ===============
+  useEffect(() => {
+    const now = new Date();
+    const currentDate = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
 
-  // ===== MODIFIED: handlers for exclusive day counting =====
+    if (formData.status === 'confirmed') {
+      setFormData(prev => ({ ...prev, start_time: currentTime }));
+    }
+
+    if (formData.status === 'completed') {
+      setFormData(prev => ({
+        ...prev,
+        end_date: currentDate,
+        end_time: currentTime
+      }));
+    }
+  }, [formData.status]);
+
+  // Charger les sous-locations quand le formulaire s'ouvre
+  useEffect(() => {
+    if (isOpen) {
+      dispatch(fetchSousLocations());
+    }
+  }, [isOpen, dispatch]);
+
+  // ---- Gestion des dates (exclusif) ----
   const handleStartDateChange = (value) => {
     setFormData(prev => ({ ...prev, start_date: value }));
     if (value && formData.rental_days) {
       const start = new Date(value);
       const end = new Date(start);
-      end.setDate(start.getDate() + formData.rental_days); // exclusive: + days
+      end.setDate(start.getDate() + formData.rental_days);
       setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
     }
   };
@@ -1181,22 +1279,21 @@ const ReservationForm = ({
   };
 
   const handleRentalDaysChange = (value) => {
-  // Si l'utilisateur efface tout, on met null
-  if (value === '') {
-    setFormData(prev => ({ ...prev, rental_days: null }));
-    return;
-  }
-  const days = parseInt(value, 10);
-  if (!isNaN(days) && days >= 1) {
-    setFormData(prev => ({ ...prev, rental_days: days }));
-    if (formData.start_date) {
-      const start = new Date(formData.start_date);
-      const end = new Date(start);
-      end.setDate(start.getDate() + days);
-      setFormData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
+    if (value === '') {
+      setFormData(prev => ({ ...prev, rental_days: null }));
+      return;
     }
-  }
-};
+    const days = parseInt(value, 10);
+    if (!isNaN(days) && days >= 1) {
+      setFormData(prev => ({ ...prev, rental_days: days }));
+      if (formData.start_date) {
+        const start = new Date(formData.start_date);
+        const end = new Date(start);
+        end.setDate(start.getDate() + days);
+        setFormData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
+      }
+    }
+  };
 
   const handleClientSelect = (client) => {
     setSelectedClient(client);
@@ -1435,12 +1532,42 @@ const ReservationForm = ({
                 <div className="inline-field"><label>Date de fin *</label><input type="date" className="inline-input" value={formData.end_date} onChange={(e) => handleEndDateChange(e.target.value)} required /></div>
                 <div className="inline-field"><label>Heure de fin</label><input type="time" className="inline-input" value={formData.end_time} onChange={(e) => setFormData(prev => ({ ...prev, end_time: e.target.value }))} /></div>
                 <div className="inline-field"><label>Nombre de jours</label><input
-  type="number"
-  className="inline-input"
-  value={formData.rental_days ?? ''}
-  onChange={(e) => handleRentalDaysChange(e.target.value)}
-  min="1"
-/></div>
+                  type="number"
+                  className="inline-input"
+                  value={formData.rental_days ?? ''}
+                  onChange={(e) => handleRentalDaysChange(e.target.value)}
+                  min="1"
+                /></div>
+              </div>
+            </div>
+
+            {/* Sous‑location & prolongation */}
+            <div className="inline-section">
+              <div className="inline-section-header"><Tag size={18} /><h3>Sous‑location & prolongation</h3></div>
+              <div className="inline-grid-2">
+                <div className="inline-field">
+                  <label>Sous‑location</label>
+                  <SousLocationSearch
+                    sousLocations={sousLocations}
+                    selectedId={formData.sous_location_id}
+                    onSelect={(id) => setFormData({ ...formData, sous_location_id: id })}
+                    onCreateNew={() => setShowCreateSousLocationModal(true)}
+                    canCreate={canCreateSousLocation}
+                  />
+                </div>
+                <div className="inline-field">
+                  <label>Prolongation autorisée</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.can_extend_days || false}
+                      onChange={(e) => setFormData({ ...formData, can_extend_days: e.target.checked })}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#475569' }}>
+                      Le client pourra prolonger la location
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1544,12 +1671,6 @@ const ReservationForm = ({
                   </select>
                 </div>
               </div>
-              {/* NEW: Recalculate button */}
-              <div style={{ marginTop: "0.5rem" }}>
-                <button type="button" className="inline-secondary-btn" onClick={handleRecalculateTotal} style={{ fontSize: "0.7rem" }}>
-                  <RefreshCw size={14} /> Recalculer le total
-                </button>
-              </div>
               <div className="inline-payment-section">
                 <button type="button" className="inline-add-payment" onClick={() => setShowAddPayment(!showAddPayment)}>
                   <Plus size={16} /> Ajouter un paiement
@@ -1592,12 +1713,82 @@ const ReservationForm = ({
               <div className="inline-field">
                 <textarea className="inline-textarea" rows="3" value={formData.notes} onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))} placeholder="Notes supplémentaires..." />
               </div>
-              <div className="inline-field">
-                <textarea className="inline-textarea" rows="2" value={formData.reception_notes} onChange={(e) => setFormData(prev => ({ ...prev, reception_notes: e.target.value }))} placeholder="Notes de réception..." />
-              </div>
+
             </div>
           </div>
         </div>
+
+        {/* Modal de création de sous-location */}
+        {showCreateSousLocationModal && (
+          <div className="modal-overlay" onClick={() => setShowCreateSousLocationModal(false)}>
+            <div className="modal" style={{ maxWidth: '450px' }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">
+                  <Plus size={20} style={{ color: '#eab308' }} /> Nouvelle sous‑location
+                </h2>
+                <button onClick={() => setShowCreateSousLocationModal(false)} className="modal-close">
+                  <X size={20} />
+                </button>
+              </div>
+              <div style={{ padding: '1.5rem' }}>
+                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.875rem', color: '#1e293b' }}>Nom *</label>
+                  <input
+                    type="text"
+                    className="inline-input"
+                    value={newSousLocationName}
+                    onChange={(e) => setNewSousLocationName(e.target.value)}
+                    placeholder="Ex: Location groupe"
+                    style={{ width: '100%', padding: '0.75rem' }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600, fontSize: '0.875rem', color: '#1e293b' }}>Description</label>
+                  <textarea
+                    className="inline-textarea"
+                    rows="3"
+                    value={newSousLocationDesc}
+                    onChange={(e) => setNewSousLocationDesc(e.target.value)}
+                    placeholder="Description facultative"
+                    style={{ width: '100%', padding: '0.75rem' }}
+                  />
+                </div>
+              </div>
+              <div className="modal-actions-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowCreateSousLocationModal(false)} className="btn btn-secondary" type="button">
+                  Annuler
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!newSousLocationName.trim()) {
+                      toast.error('Le nom est obligatoire');
+                      return;
+                    }
+                    try {
+                      const result = await dispatch(createSousLocation({
+                        name: newSousLocationName,
+                        description: newSousLocationDesc
+                      })).unwrap();
+                      setFormData({ ...formData, sous_location_id: result.id });
+                      setShowCreateSousLocationModal(false);
+                      setNewSousLocationName('');
+                      setNewSousLocationDesc('');
+                      toast.success('Sous‑location créée');
+                      dispatch(fetchSousLocations());
+                    } catch (err) {
+                      toast.error(err.message || 'Erreur');
+                    }
+                  }}
+                  className="btn btn-primary"
+                  type="button"
+                >
+                  Créer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="inline-form-footer">
           <button type="button" className="inline-secondary-btn" onClick={onClose}>Annuler</button>
           <button type="submit" className="inline-primary-btn" disabled={submitting}>
@@ -1642,7 +1833,6 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   });
   const [showDisplayOptions, setShowDisplayOptions] = useState(false);
 
-  // États pour la popup d'impression
   const [showPrintOptions, setShowPrintOptions] = useState(false);
 
   const handleDisplayOptionChange = (section, value) => {
@@ -1667,56 +1857,56 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   };
 
   const generateContractPDF = async (includeSignatures = false) => {
-  try {
-    toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
-    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const contractElement = document.getElementById("contract-print");
-    if (!contractElement) throw new Error("Contract element not found");
-    const contractClone = contractElement.cloneNode(true);
+    try {
+      toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const contractElement = document.getElementById("contract-print");
+      if (!contractElement) throw new Error("Contract element not found");
+      const contractClone = contractElement.cloneNode(true);
 
-    if (includeSignatures) {
-      const signatureBlocks = contractClone.querySelectorAll('.signature-block');
-      if (signatureBlocks.length >= 1) {
-        const agentBlock = signatureBlocks[0];
-        const signatureBox = agentBlock.querySelector('.signature-box');
-        if (signatureBox) {
-          signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
+      if (includeSignatures) {
+        const signatureBlocks = contractClone.querySelectorAll('.signature-block');
+        if (signatureBlocks.length >= 1) {
+          const agentBlock = signatureBlocks[0];
+          const signatureBox = agentBlock.querySelector('.signature-box');
+          if (signatureBox) {
+            signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
+          }
         }
       }
-    }
 
-    contractClone.style.width = "210mm";
-    contractClone.style.height = "auto";
-    contractClone.style.padding = "15px";
-    contractClone.style.margin = "0";
-    contractClone.style.boxSizing = "border-box";
-    contractClone.style.backgroundColor = "white";
-    contractClone.style.position = "absolute";
-    contractClone.style.top = "-9999px";
-    contractClone.style.left = "0";
-    document.body.appendChild(contractClone);
-    const images = contractClone.querySelectorAll("img");
-    await Promise.all(Array.from(images).map(img => {
-      if (img.complete) return Promise.resolve();
-      return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
-    }));
-    await new Promise(resolve => setTimeout(resolve, 100));
-    const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-    document.body.removeChild(contractClone);
-    const imgData = canvas.toDataURL("image/png", 1.0);
-    const imgWidth = pageWidth - 20;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
-    
-    const filename = `contrat-location-${reservation.id}.pdf`;
-    downloadAndOpenPDF(doc, filename); // <-- remplace doc.save()
-    toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
-  } catch (error) {
-    console.error(error);
-    toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
-  }
-};
+      contractClone.style.width = "210mm";
+      contractClone.style.height = "auto";
+      contractClone.style.padding = "15px";
+      contractClone.style.margin = "0";
+      contractClone.style.boxSizing = "border-box";
+      contractClone.style.backgroundColor = "white";
+      contractClone.style.position = "absolute";
+      contractClone.style.top = "-9999px";
+      contractClone.style.left = "0";
+      document.body.appendChild(contractClone);
+      const images = contractClone.querySelectorAll("img");
+      await Promise.all(Array.from(images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+      }));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      document.body.removeChild(contractClone);
+      const imgData = canvas.toDataURL("image/png", 1.0);
+      const imgWidth = pageWidth - 20;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+
+      const filename = `contrat-location-${reservation.id}.pdf`;
+      downloadAndOpenPDF(doc, filename);
+      toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
+    } catch (error) {
+      console.error(error);
+      toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
+    }
+  };
 
   const handlePrintClick = () => {
     setShowPrintOptions(true);
@@ -1800,7 +1990,6 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
         />
       </div>
 
-      {/* Modal options d'impression */}
       {showPrintOptions && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: '400px' }}>
@@ -1874,22 +2063,19 @@ export default function AdminReservationsStatus() {
   const [sortDirection, setSortDirection] = useState("desc");
   const [startDateFilter, setStartDateFilter] = useState("");
   const [endDateFilter, setEndDateFilter] = useState("");
-const [itemsPerPage, setItemsPerPage] = useState(10);
-  // ===== Confirm Modal State =====
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingReservationId, setPendingReservationId] = useState(null);
   const [availableMatricules, setAvailableMatricules] = useState([]);
   const [selectedMatriculeId, setSelectedMatriculeId] = useState('');
 
-  // ===== Complete Modal State =====
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeReservationId, setCompleteReservationId] = useState(null);
   const [kilometrageRetour, setKilometrageRetour] = useState('');
-  // NEW: states for return date and time
   const [returnDate, setReturnDate] = useState('');
   const [returnTime, setReturnTime] = useState('');
 
-  // Nouveaux états pour la popup d'impression
   const [showPrintOptions, setShowPrintOptions] = useState(false);
   const [printReservation, setPrintReservation] = useState(null);
 
@@ -1905,7 +2091,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
       ]);
     };
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   // ===== Handle contract opening from navigation =====
@@ -1991,7 +2176,7 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
     setShowReservationForm(true);
   };
 
-  // ===== Confirm Modal Logic =====
+  // ===== Confirm Modal Logic (avec start_time automatique HH:MM) =====
   const openConfirmModal = (reservation) => {
     const carId = reservation.car_id;
     const reservedMatriculeIds = reservations
@@ -2016,45 +2201,48 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const confirmConfirm = async () => {
     if (!selectedMatriculeId) {
-        toast.error("Veuillez sélectionner un matricule.");
-        return;
+      toast.error("Veuillez sélectionner un matricule.");
+      return;
     }
     try {
-        const result = await dispatch(updateReservation({
-            id: pendingReservationId,
-            data: { status: 'confirmed', matricule_id: selectedMatriculeId }
-        })).unwrap();
-        const updatedReservation = result.reservation || result;
-        const token = updatedReservation.signature_token || pendingReservationId;
-        const code = updatedReservation.signature_code || pendingReservationId;
+      const result = await dispatch(updateReservation({
+        id: pendingReservationId,
+        data: {
+          status: 'confirmed',
+          matricule_id: selectedMatriculeId,
+          start_time: new Date().toTimeString().slice(0, 5)
+        }
+      })).unwrap();
+      const updatedReservation = result.reservation || result;
+      const token = updatedReservation.signature_token || pendingReservationId;
+      const code = updatedReservation.signature_code || pendingReservationId;
 
-        toast.success("Réservation confirmée avec succès !");
-        await dispatch(fetchReservations(true));
-        await dispatch(refreshMatricules(true));
-
-        const link = `${window.location.origin}/sign-contract/${token}`;
-        toast.info(
-            <div>
-                <p>🔗 Lien de signature : <a href={link} target="_blank" rel="noopener noreferrer">{link}</a></p>
-                <p>🔑 Code : <strong>{code}</strong> (à communiquer au client)</p>
-            </div>,
-            { duration: 10000 }
-        );
+      toast.success("Réservation confirmée avec succès !");
+      const link = `${window.location.origin}/sign-contract/${token}`;
+      toast.info(
+        <div>
+          <p>🔗 Lien de signature : <a href={link} target="_blank" rel="noopener noreferrer">{link}</a></p>
+          <p>🔑 Code : <strong>{code}</strong> (à communiquer au client)</p>
+        </div>,
+        { duration: 10000 }
+      );
     } catch (error) {
-        toast.error(error.message || "Erreur lors de la confirmation");
+      toast.error(error.message || "Erreur lors de la confirmation");
     }
     setShowConfirmModal(false);
     setPendingReservationId(null);
     setSelectedMatriculeId('');
   };
 
-  // ===== Complete Modal Logic =====
+  // ===== Complete Modal Logic (avec date et heure actuelles HH:MM) =====
   const openCompleteModal = (reservation) => {
     setCompleteReservationId(reservation.id);
     setKilometrageRetour(reservation.kilometrage_entree || reservation.matricule_kilometrage_at_start || '');
-    // Pre-fill return date & time
-    setReturnDate(reservation.end_date ? reservation.end_date.split('T')[0] : '');
-    setReturnTime(reservation.end_time || '18:00');
+
+    const now = new Date();
+    setReturnDate(now.toISOString().split('T')[0]);
+    setReturnTime(now.toTimeString().slice(0, 5));
+
     setShowCompleteModal(true);
   };
 
@@ -2074,8 +2262,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
         }
       })).unwrap();
       toast.success("Réservation terminée avec succès !");
-      await dispatch(fetchReservations(true));
-      await dispatch(refreshMatricules(true));
     } catch (error) {
       toast.error(error.message || "Erreur lors de la terminaison");
     }
@@ -2147,37 +2333,37 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
   // ----- Signature Link handler -----
   const handleSignatureLink = async (reservation) => {
     if (reservation.status !== 'confirmed') {
-        toast.warning("Seules les réservations confirmées peuvent avoir un lien de signature.");
-        return;
+      toast.warning("Seules les réservations confirmées peuvent avoir un lien de signature.");
+      return;
     }
 
     try {
-        const response = await api.post(`/reservations/${reservation.id}/generate-signature`);
-        const { signature_token, signature_code } = response.data;
+      const response = await api.post(`/reservations/${reservation.id}/generate-signature`);
+      const { signature_token, signature_code } = response.data;
 
-        const link = `${window.location.origin}/sign-contract/${signature_token}`;
-        const fullText = `🔗 Lien de signature : ${link}\n🔑 Code : ${signature_code}`;
+      const link = `${window.location.origin}/sign-contract/${signature_token}`;
+      const fullText = `🔗 Lien de signature : ${link}\n🔑 Code : ${signature_code}`;
 
-        navigator.clipboard.writeText(fullText)
-            .then(() => {
-                toast.success("Nouveau lien et code générés et copiés dans le presse-papier !");
-            })
-            .catch(() => {
-                toast.info(
-                    <div>
-                        <p>🔗 Lien : <a href={link} target="_blank" rel="noopener noreferrer">{link}</a></p>
-                        <p>🔑 Code : <strong>{signature_code}</strong></p>
-                    </div>,
-                    { duration: 10000 }
-                );
-            });
+      navigator.clipboard.writeText(fullText)
+        .then(() => {
+          toast.success("Nouveau lien et code générés et copiés dans le presse-papier !");
+        })
+        .catch(() => {
+          toast.info(
+            <div>
+              <p>🔗 Lien : <a href={link} target="_blank" rel="noopener noreferrer">{link}</a></p>
+              <p>🔑 Code : <strong>{signature_code}</strong></p>
+            </div>,
+            { duration: 10000 }
+          );
+        });
     } catch (error) {
-        console.error('Error generating signature:', error);
-        toast.error(error.response?.data?.message || "Erreur lors de la génération du lien de signature.");
+      console.error('Error generating signature:', error);
+      toast.error(error.response?.data?.message || "Erreur lors de la génération du lien de signature.");
     }
-};
+  };
 
-  // ===== Modified setStatus to use modals =====
+  // ===== setStatus (avec modales) =====
   const setStatus = async (id, newStatus, extraData = {}) => {
     if (newStatus === 'confirmed') {
       const reservation = reservations.find(r => r.id === id);
@@ -2216,8 +2402,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
       toast.error(result.payload);
     } else {
       toast.success("Réservation supprimée avec succès");
-      await dispatch(fetchReservations(true));
-      await dispatch(refreshMatricules(true));
     }
     setDeleteModalOpen(false);
     setReservationToDelete(null);
@@ -2269,7 +2453,7 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
     const end = new Date(endDate);
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays === 0 ? 1 : diffDays; // exclusive
+    return diffDays === 0 ? 1 : diffDays;
   };
 
   const calculateDaysRemaining = (reservation) => {
@@ -2288,7 +2472,7 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
     return `${diffDays} jours restants`;
   };
 
-  // ----- Gestion de l'impression avec popup -----
+  // ===== Gestion de l'impression avec popup =====
   const handlePrintClick = (reservation) => {
     setSelectedContractReservation(reservation);
     setPrintReservation(reservation);
@@ -2304,60 +2488,60 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
   };
 
   const generateContractPDF = async (reservation, includeSignatures = false) => {
-  try {
-    toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
-    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const contractElement = document.getElementById("contract-print");
-    if (!contractElement) {
-      console.error("Contract element not found");
-      toast.error("Erreur: Élément du contrat non trouvé", { id: "contract-pdf" });
-      return;
-    }
-    const contractClone = contractElement.cloneNode(true);
+    try {
+      toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const contractElement = document.getElementById("contract-print");
+      if (!contractElement) {
+        console.error("Contract element not found");
+        toast.error("Erreur: Élément du contrat non trouvé", { id: "contract-pdf" });
+        return;
+      }
+      const contractClone = contractElement.cloneNode(true);
 
-    if (includeSignatures) {
-      const signatureBlocks = contractClone.querySelectorAll('.signature-block');
-      if (signatureBlocks.length >= 1) {
-        const agentBlock = signatureBlocks[0];
-        const signatureBox = agentBlock.querySelector('.signature-box');
-        if (signatureBox) {
-          signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
+      if (includeSignatures) {
+        const signatureBlocks = contractClone.querySelectorAll('.signature-block');
+        if (signatureBlocks.length >= 1) {
+          const agentBlock = signatureBlocks[0];
+          const signatureBox = agentBlock.querySelector('.signature-box');
+          if (signatureBox) {
+            signatureBox.innerHTML = `<img src="${agentSignatureImage}" style="max-height:60px; max-width:100%;" />`;
+          }
         }
       }
-    }
 
-    contractClone.style.width = "210mm";
-    contractClone.style.height = "auto";
-    contractClone.style.padding = "15px";
-    contractClone.style.margin = "0";
-    contractClone.style.boxSizing = "border-box";
-    contractClone.style.backgroundColor = "white";
-    contractClone.style.position = "absolute";
-    contractClone.style.top = "-9999px";
-    contractClone.style.left = "0";
-    document.body.appendChild(contractClone);
-    const images = contractClone.querySelectorAll("img");
-    await Promise.all(Array.from(images).map(img => {
-      if (img.complete) return Promise.resolve();
-      return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
-    }));
-    await new Promise(resolve => setTimeout(resolve, 100));
-    const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-    document.body.removeChild(contractClone);
-    const imgData = canvas.toDataURL("image/png", 1.0);
-    const imgWidth = pageWidth - 20;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
-    
-    const filename = `contrat-location-${reservation.id}.pdf`;
-    downloadAndOpenPDF(doc, filename); // <-- remplace doc.save()
-    toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
-  } catch (error) {
-    console.error("Error generating contract:", error);
-    toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
-  }
-};
+      contractClone.style.width = "210mm";
+      contractClone.style.height = "auto";
+      contractClone.style.padding = "15px";
+      contractClone.style.margin = "0";
+      contractClone.style.boxSizing = "border-box";
+      contractClone.style.backgroundColor = "white";
+      contractClone.style.position = "absolute";
+      contractClone.style.top = "-9999px";
+      contractClone.style.left = "0";
+      document.body.appendChild(contractClone);
+      const images = contractClone.querySelectorAll("img");
+      await Promise.all(Array.from(images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+      }));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      document.body.removeChild(contractClone);
+      const imgData = canvas.toDataURL("image/png", 1.0);
+      const imgWidth = pageWidth - 20;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+
+      const filename = `contrat-location-${reservation.id}.pdf`;
+      downloadAndOpenPDF(doc, filename);
+      toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
+    } catch (error) {
+      console.error("Error generating contract:", error);
+      toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
+    }
+  };
 
   const handleViewContract = (reservation) => {
     setSelectedContractReservation(reservation);
@@ -2381,7 +2565,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
   // ----- Filtering and sorting (ONLY pending, cancelled, contacted) -----
   const filteredReservations = useMemo(() => {
     let filtered = reservations.filter(r => {
-      // ============ ONLY include pending, cancelled, contacted ============
       if (r.status !== 'pending' && r.status !== 'cancelled' && r.status !== 'contacted') {
         return false;
       }
@@ -2396,7 +2579,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
         return false;
       }
 
-      // ===== FIX: Use URL filter parameter first, then fallback to dropdown =====
       if (filterParam) {
         if (r.status !== filterParam) return false;
       } else if (statusFilter) {
@@ -2406,7 +2588,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
       return true;
     });
 
-    // Date filters
     if (startDateFilter && endDateFilter) {
       const filterStart = new Date(startDateFilter);
       const filterEnd = new Date(endDateFilter);
@@ -2423,7 +2604,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
       filtered = filtered.filter(r => new Date(r.end_date) <= filterEnd);
     }
 
-    // Sorting
     filtered.sort((a, b) => {
       let aVal, bVal;
       switch (sortField) {
@@ -2481,7 +2661,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
     );
   }
 
-  // ===== Modals rendering =====
   const renderConfirmModal = () => (
     <div className="modal-overlay">
       <div className="modal" style={{ maxWidth: '500px' }}>
@@ -2574,7 +2753,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
     </div>
   );
 
-  // ===== Main render =====
   return (
     <>
       {selectedContractReservation && (
@@ -2673,6 +2851,8 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
                     <th className="sortable-header">Jours Restants</th>
                     <th onClick={() => handleSort("total")} className="sortable-header">Total {getSortIcon("total")}</th>
                     <th onClick={() => handleSort("status")} className="sortable-header">Statut {getSortIcon("status")}</th>
+                    <th>Prolongation</th>
+                    <th>Sous‑location</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -2702,16 +2882,124 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
                             </div>
                           </td>
                           <td>
-                            <div className="vehicle-info-cell">
-                              <div className="vehicle-model">{car ? `${car.brand} ${car.model}` : "—"}</div>
-                              <div className="vehicle-matricule">{mat?.matricule_code || "—"}</div>
-                            </div>
-                          </td>
-                          <td className="text-xs">{new Date(r.start_date).toLocaleDateString("fr-FR")}<br />→ {new Date(r.end_date).toLocaleDateString("fr-FR")}</td>
-                          <td className="text-center">{days}</td>
+  <div className="vehicle-info-cell">
+    <div className="vehicle-model">
+      {car ? `${car.brand} ${car.model}` : "—"}
+    </div>
+    <div className="vehicle-matricule">
+      {mat?.matricule_code || "—"}
+      {car?.color && (
+        <span className="vehicle-color-info">
+          <span className="color-dot" style={{ backgroundColor: car.color }} title={car.color}></span>
+          <span className="color-text">{car.color}</span>
+        </span>
+      )}
+    </div>
+  </div>
+</td>
+<td>
+  <div style={{
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    fontSize: '0.75rem'
+  }}>
+    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <Calendar size={12} style={{ color: '#64748b' }} />
+      {new Date(r.start_date).toLocaleDateString("fr-FR")}
+    </span>
+    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0b0d0e' }}>
+      <span style={{ marginLeft: '16px' }}>→</span>
+      {new Date(r.end_date).toLocaleDateString("fr-FR")}
+    </span>
+  </div>
+</td>                          <td>
+  <span style={{
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    background: '#f1f5f9',
+    color: '#1e293b',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontSize: '0.75rem',
+    fontWeight: '500'
+  }}>
+    <CalendarDays size={12} style={{ color: '#eab308' }} />
+    {days} {days > 1 ? 'jours' : 'jour'}
+  </span>
+</td>
                           <td className={`days-remaining-cell ${r.status === "retard" ? "late" : ""}`}>{daysRemaining}</td>
-                          <td className="font-semibold">{r.total_price} DH</td>
+                          <td>
+  <span style={{
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    background: '#fef3c7',
+    color: '#92400e',
+    padding: '2px 10px',
+    borderRadius: '20px',
+    fontWeight: '700',
+    fontSize: '0.875rem',
+    border: '1px solid #f59e0b'
+  }}>
+    <Coins size={14} style={{ color: '#d97706' }} />
+    {r.total_price} DH
+  </span>
+</td>
                           <td>{getStatusBadge(r.status)}</td>
+                          <td>
+  {r.can_extend_days ? (
+    <span className="badge" style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      background: '#dcfce7',
+      color: '#166534',
+      padding: '2px 10px',
+      borderRadius: '20px',
+      fontWeight: '600',
+      fontSize: '0.75rem'
+    }}>
+      <CheckCircle size={14} /> Oui
+    </span>
+  ) : (
+    <span className="badge" style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      background: '#f1f5f9',
+      color: '#475569',
+      padding: '2px 10px',
+      borderRadius: '20px',
+      fontWeight: '600',
+      fontSize: '0.75rem'
+    }}>
+      <XCircle size={14} /> Non
+    </span>
+  )}
+</td>
+                          <td>
+  {r.sous_location ? (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+      <Tag size={14} /> {r.sous_location.name}
+    </span>
+  ) : (
+    <span className="badge" style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      background: '#eab308',
+      color: '#0f172a',
+      padding: '2px 10px',
+      borderRadius: '20px',
+      fontWeight: '600',
+      fontSize: '0.75rem'
+    }}>
+      <Home size={14} /> Propre
+    </span>
+  )}
+</td>
                           <td className="text-right">
                             <div className="action-buttons">
                               {r.status === "pending" || r.status === "contacted" ? (
@@ -2738,18 +3026,17 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
               </table>
             </div>
             {totalPages > 1 && (
-  <PaginationControls
-    currentPage={currentPage}
-    totalPages={totalPages}
-    onPageChange={setCurrentPage}
-    itemsPerPage={itemsPerPage}
-    onItemsPerPageChange={setItemsPerPage}
-    totalItems={filteredReservations.length}
-  />
-)}
+              <PaginationControls
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                onItemsPerPageChange={setItemsPerPage}
+                totalItems={filteredReservations.length}
+              />
+            )}
           </div>
 
-          {/* Details Modal */}
           {details && (
             <div className="modal-overlay">
               <div className="modal">
@@ -2807,7 +3094,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
             </div>
           )}
 
-          {/* Delete Confirmation Modal */}
           {deleteModalOpen && reservationToDelete && (
             <div className="modal-overlay">
               <div className="modal delete-modal">
@@ -2820,7 +3106,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
             </div>
           )}
 
-          {/* Popup d'options d'impression */}
           {showPrintOptions && printReservation && (
             <div className="modal-overlay">
               <div className="modal" style={{ maxWidth: '400px' }}>
@@ -2847,13 +3132,10 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
         </div>
       )}
 
-      {/* Modals for confirm and complete */}
       {showConfirmModal && renderConfirmModal()}
       {showCompleteModal && renderCompleteModal()}
 
-      {/* ===== STYLES ===== */}
       <style>{`
-        /* All styles from previous version (unchanged) */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif; background: #f8fafc; }
         .sortable-header { cursor: pointer; user-select: none; transition: background-color 0.2s; }
@@ -3035,7 +3317,6 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
         @media (max-width: 640px) { .inline-grid-2 { grid-template-columns: 1fr; min-width: auto; } .stats-grid { grid-template-columns: repeat(2, 1fr); overflow-x: auto; } .action-buttons { flex-wrap: wrap; justify-content: flex-start; } .modal { max-width: 95%; margin: 0 auto; } }
         @media screen and (min-resolution: 120dpi) { .admin-container, .inline-form-container, .inline-details-container { padding: 0.75rem; } .inline-form { padding: 1rem; } .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); } .cards-grid { grid-template-columns: 1fr; } }
         * { max-width: 100%; box-sizing: border-box; }
-        /* ===== Display Options Panel ===== */
         .display-options-panel {
           background: white;
           border-radius: 12px;
@@ -3144,6 +3425,151 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
             background: #334155;
           }
         }
+
+        /* Additional styles for sous-location search */
+        .sous-location-search {
+          position: relative;
+          width: 100%;
+        }
+        .sous-location-search .inline-search-input-wrapper {
+          position: relative;
+        }
+        .sous-location-search .selected-badge {
+          position: absolute;
+          right: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: #eab308;
+          color: #0f172a;
+          padding: 2px 10px;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          pointer-events: none;
+          max-width: 60%;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .inline-result-item.active {
+          background: #fefce8;
+          border-left: 3px solid #eab308;
+        }
+        .inline-empty-state {
+          padding: 1rem;
+          text-align: center;
+          background: #f8fafc;
+          border-radius: 12px;
+          margin-top: 0.5rem;
+        }
+        .inline-empty-state p {
+          color: #64748b;
+          margin-bottom: 0.75rem;
+        }
+          /* Style for the vehicle/matricule cell */
+.vehicle-info-cell {
+  background: #fefce8;         /* light yellow background */
+  padding: 4px 12px;
+  border-radius: 8px;
+  border-left: 4px solid #eab308; /* gold left border */
+  display: inline-block;
+  min-width: 120px;
+}
+
+.vehicle-model {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 0.875rem;
+}
+
+.vehicle-matricule {
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  color: #b8860b;              /* gold/dark orange for matricule */
+  font-size: 0.8rem;
+  letter-spacing: 0.5px;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .vehicle-info-cell {
+    background: #1e293b;       /* darker background */
+    border-left-color: #fbbf24; /* lighter gold */
+  }
+  .vehicle-model {
+    color: #f1f5f9;
+  }
+  .vehicle-matricule {
+    color: #fbbf24;
+  }
+}
+  /* Vehicle / Matricule column enhancements */
+.vehicle-info-cell {
+  background: #fefce8;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border-left: 4px solid #eab308;
+  display: inline-block;
+  min-width: 120px;
+}
+
+.vehicle-model {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 0.875rem;
+}
+
+.vehicle-matricule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  color: #b8860b;
+  font-size: 0.8rem;
+  letter-spacing: 0.5px;
+}
+
+.vehicle-color-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.15);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.color-text {
+  color: #475569;
+  font-weight: 400;
+  font-family: system-ui, sans-serif;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .vehicle-info-cell {
+    background: #1e293b;
+    border-left-color: #fbbf24;
+  }
+  .vehicle-model {
+    color: #f1f5f9;
+  }
+  .vehicle-matricule {
+    color: #fbbf24;
+  }
+  .color-text {
+    color: #94a3b8;
+  }
+}
       `}</style>
     </>
   );

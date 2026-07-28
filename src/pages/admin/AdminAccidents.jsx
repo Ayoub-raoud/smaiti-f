@@ -37,7 +37,7 @@ import {
   Users, CalendarDays, Euro, Wallet, CreditCard, Loader2, Wrench, Palette,
   Sparkles, Star, ArrowLeft, Info, Activity, ArrowUpDown, ArrowUp, ArrowDown,
   Key, Lock, Unlock, Crown, Printer, Download, Truck, Home, Clipboard,
-  Receipt, PenTool, FileSignature, CheckSquare, Percent
+  Receipt, PenTool, FileSignature, CheckSquare, Percent, Copy
 } from "lucide-react";
 
 export default function AdminAccidents() {
@@ -86,8 +86,8 @@ export default function AdminAccidents() {
   const [filteredClientsList, setFilteredClientsList] = useState([]);
   const [selectedClientObj, setSelectedClientObj] = useState(null);
 
+  // Reservation search – we use a computed list based on filters
   const [reservationSearchTerm, setReservationSearchTerm] = useState('');
-  const [filteredReservationsList, setFilteredReservationsList] = useState([]);
   const [selectedReservationObj, setSelectedReservationObj] = useState(null);
 
   const [garageSearchTerm, setGarageSearchTerm] = useState('');
@@ -107,7 +107,7 @@ export default function AdminAccidents() {
   // ---------- Close Confirmation Modal state ----------
   const [showCloseModal, setShowCloseModal] = useState(false);
 
- const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Helper function pour formater les items en toute sécurité
   const safeStringify = (items) => {
@@ -170,6 +170,7 @@ export default function AdminAccidents() {
     estimate_tva: 0,
     estimate_total_ttc: 0,
     estimate_status: "draft",
+    estimate_number: "",
     repair_start_date: "",
     repair_end_date: "",
     repair_notes: "",
@@ -325,34 +326,103 @@ export default function AdminAccidents() {
     });
   };
 
+  // Copy estimate to invoice
+  const copyEstimateToInvoice = () => {
+    setFormData(prev => ({
+      ...prev,
+      invoice_items: JSON.parse(JSON.stringify(prev.estimate_items || [])),
+    }));
+    toast.info("Articles du devis copiés vers la facture");
+  };
+
   // Recalculate totals when items change (use effect)
   useEffect(() => {
     // Estimate totals
     const estItems = formData.estimate_items || [];
     const estHT = estItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unit_price || 0), 0);
-    const estTVA = estHT * 0.20; // default 20%
-    const estTTC = estHT + estTVA;
     setFormData(prev => ({
       ...prev,
       estimate_total_ht: estHT,
-      estimate_tva: estTVA,
-      estimate_total_ttc: estTTC
+      estimate_tva: 0,
+      estimate_total_ttc: estHT
     }));
   }, [formData.estimate_items]);
 
   useEffect(() => {
-    // Invoice totals
+    // Invoice totals – only HT
     const invItems = formData.invoice_items || [];
     const invHT = invItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unit_price || 0), 0);
-    const invTVA = invHT * 0.20;
-    const invTTC = invHT + invTVA;
     setFormData(prev => ({
       ...prev,
       invoice_total_ht: invHT,
-      invoice_tva: invTVA,
-      invoice_total_ttc: invTTC
+      invoice_tva: 0,
+      invoice_total_ttc: invHT
     }));
   }, [formData.invoice_items]);
+
+  // --------------------------------------------------------------
+  // RESERVATION FILTERING – computed list based on matricule, date, time
+  // --------------------------------------------------------------
+  const filteredReservationsList = useMemo(() => {
+    // If no filters and no search term, return empty
+    if (!reservationSearchTerm && !formData.matricule_id && !formData.date_accident && !formData.time_accident) {
+      return [];
+    }
+
+    let base = reservations;
+
+    // Filter by matricule
+    if (formData.matricule_id) {
+      base = base.filter(r => r.matricule_id === parseInt(formData.matricule_id));
+    }
+
+    // Filter by date (accident date must be within reservation start/end)
+    if (formData.date_accident) {
+      const accidentDate = new Date(formData.date_accident);
+      base = base.filter(r => {
+        const start = new Date(r.start_date);
+        const end = new Date(r.end_date);
+        // Set time to 00:00:00 for proper comparison
+        accidentDate.setHours(0,0,0,0);
+        start.setHours(0,0,0,0);
+        end.setHours(0,0,0,0);
+        return accidentDate >= start && accidentDate <= end;
+      });
+    }
+
+    // Filter by time (accident time must be between start_time and end_time)
+    if (formData.time_accident) {
+      const accidentTime = formData.time_accident;
+      base = base.filter(r => {
+        // If reservation has time fields, check range
+        if (r.start_time && r.end_time) {
+          return accidentTime >= r.start_time && accidentTime <= r.end_time;
+        }
+        // If no time constraints, keep (but we might want to exclude if no time set)
+        return true;
+      });
+    }
+
+    // Apply search term
+    const lower = reservationSearchTerm.toLowerCase().trim();
+    if (lower) {
+      base = base.filter(res => {
+        const client = clients.find(c => c.id === res.client_id);
+        const clientName = client ? `${client.prenom} ${client.nom}`.toLowerCase() : '';
+        const startDate = new Date(res.start_date).toLocaleDateString("fr-FR");
+        const endDate = new Date(res.end_date).toLocaleDateString("fr-FR");
+        return (
+          res.id.toString().includes(lower) ||
+          clientName.includes(lower) ||
+          startDate.includes(lower) ||
+          endDate.includes(lower)
+        );
+      });
+    }
+
+    // Limit to 10 results
+    return base.slice(0, 10);
+  }, [reservations, formData.matricule_id, formData.date_accident, formData.time_accident, reservationSearchTerm, clients]);
 
   // Submit handler
   const handleSubmit = async (e) => {
@@ -424,6 +494,7 @@ export default function AdminAccidents() {
       estimate_tva: 0,
       estimate_total_ttc: 0,
       estimate_status: "draft",
+      estimate_number: "",
       repair_start_date: "",
       repair_end_date: "",
       repair_notes: "",
@@ -447,7 +518,6 @@ export default function AdminAccidents() {
     setFilteredClientsList([]);
     setSelectedReservationObj(null);
     setReservationSearchTerm('');
-    setFilteredReservationsList([]);
     setSelectedGarageObj(null);
     setGarageSearchTerm('');
     setFilteredGaragesList([]);
@@ -470,6 +540,7 @@ export default function AdminAccidents() {
       invoice_items: acc.invoice_items || [],
       payments: acc.payments || [],
       status: acc.status || "open",
+      estimate_number: acc.estimate_number || "",
     });
 
     // Populate searchable selections
@@ -527,21 +598,16 @@ export default function AdminAccidents() {
   };
 
   const confirmDelete = async () => {
-    if (!accidentToDelete) return;
-    const result = await dispatch(deleteAccident(accidentToDelete.id));
-    if (result.error) toast.error(result.payload);
-    else {
-      toast.success("Accident supprimé");
-      await Promise.all([
-        dispatch(fetchAccidents(true)),
-        dispatch(fetchMatricules(true)),
-        dispatch(fetchGarages(true)),
-        dispatch(fetchReservations(true))
-      ]);
-    }
-    setDeleteModalOpen(false);
-    setAccidentToDelete(null);
-  };
+  if (!accidentToDelete) return;
+  const result = await dispatch(deleteAccident(accidentToDelete.id));
+  if (result.error) toast.error(result.payload);
+  else {
+    toast.success("Accident supprimé");
+    // Mise à jour locale déjà faite
+  }
+  setDeleteModalOpen(false);
+  setAccidentToDelete(null);
+};
 
   const refreshData = async () => {
     await Promise.all([
@@ -584,11 +650,11 @@ export default function AdminAccidents() {
         break;
       case 'estimate':
         PdfComponent = AccidentEstimatePDF;
-        fileName = `Devis_${accident.accident_number || accident.id}.pdf`;
+        fileName = `Devis_${accident.estimate_number || accident.accident_number || accident.id}.pdf`;
         break;
       case 'invoice':
         PdfComponent = AccidentInvoicePDF;
-        fileName = `Facture_${accident.accident_number || accident.id}.pdf`;
+        fileName = `Facture_${accident.invoice_number || accident.accident_number || accident.id}.pdf`;
         break;
       default:
         toast.error('Type de document invalide');
@@ -713,9 +779,9 @@ export default function AdminAccidents() {
       car_id: mat.car_id || '',
     }));
     setFilteredMatriculesList([]);
+    // Clear reservation selection when matricule changes
     setSelectedReservationObj(null);
     setReservationSearchTerm('');
-    setFilteredReservationsList([]);
     setFormData(prev => ({ ...prev, reservation_id: '' }));
   };
 
@@ -724,6 +790,10 @@ export default function AdminAccidents() {
     setMatriculeSearchTerm('');
     setFilteredMatriculesList([]);
     setFormData(prev => ({ ...prev, matricule_id: '', car_id: '' }));
+    // Also clear reservation
+    setSelectedReservationObj(null);
+    setReservationSearchTerm('');
+    setFormData(prev => ({ ...prev, reservation_id: '' }));
   };
 
   const handleClientSearch = (term) => {
@@ -753,57 +823,52 @@ export default function AdminAccidents() {
     setFormData(prev => ({ ...prev, client_id: '' }));
   };
 
+  // Reservation selection – we now use the computed filtered list
   const handleReservationSearch = (term) => {
     setReservationSearchTerm(term);
-    if (term.trim() === '') {
-      setFilteredReservationsList([]);
-      return;
-    }
-    let baseReservations = reservations;
-    if (formData.matricule_id) {
-      baseReservations = reservations.filter(r => r.matricule_id === parseInt(formData.matricule_id));
-    }
-    const lower = term.toLowerCase().trim();
-    const filtered = baseReservations.filter(res => {
-      const client = clients.find(c => c.id === res.client_id);
-      const clientName = client ? `${client.prenom} ${client.nom}`.toLowerCase() : '';
-      const startDate = new Date(res.start_date).toLocaleDateString("fr-FR");
-      const endDate = new Date(res.end_date).toLocaleDateString("fr-FR");
-      return (
-        res.id.toString().includes(lower) ||
-        clientName.includes(lower) ||
-        startDate.includes(lower) ||
-        endDate.includes(lower)
-      );
-    });
-    setFilteredReservationsList(filtered.slice(0, 10));
   };
 
   const handleReservationSelect = (res) => {
-    setSelectedReservationObj(res);
-    const client = clients.find(c => c.id === res.client_id);
-    setReservationSearchTerm(
-      `#${res.id} - ${new Date(res.start_date).toLocaleDateString("fr-FR")} → ${new Date(res.end_date).toLocaleDateString("fr-FR")} - Client: ${client ? `${client.prenom} ${client.nom}` : 'N/A'}`
-    );
-    setFormData(prev => ({
-      ...prev,
-      reservation_id: res.id,
-      client_id: res.client_id,
-    }));
-    setFilteredReservationsList([]);
-    if (!selectedClientObj) {
-      const client = clients.find(c => c.id === res.client_id);
-      if (client) {
-        setSelectedClientObj(client);
-        setClientSearchTerm(`${client.prenom} ${client.nom} - ${client.telephone}`);
-      }
-    }
-  };
+  setSelectedReservationObj(res);
+  const client = clients.find(c => c.id === res.client_id);
+  const mat = matricules.find(m => m.id === res.matricule_id);
+  const car = mat ? cars.find(c => c.id === mat.car_id) : null;
+
+  // Met à jour le libellé de la réservation
+  setReservationSearchTerm(
+    `#${res.id} - ${new Date(res.start_date).toLocaleDateString("fr-FR")} → ${new Date(res.end_date).toLocaleDateString("fr-FR")} - Client: ${client ? `${client.prenom} ${client.nom}` : 'N/A'}`
+  );
+
+  // Met à jour les champs du formulaire
+  setFormData(prev => ({
+    ...prev,
+    reservation_id: res.id,
+    client_id: res.client_id,
+    matricule_id: mat ? mat.id : '',
+    car_id: car ? car.id : '',
+  }));
+
+  // Sélectionne automatiquement le client
+  if (client) {
+    setSelectedClientObj(client);
+    setClientSearchTerm(`${client.prenom} ${client.nom} - ${client.telephone}`);
+  }
+
+  // Sélectionne automatiquement le matricule et la voiture
+  if (mat) {
+    setSelectedMatriculeObj(mat);
+    setMatriculeSearchTerm(`${mat.matricule_code} - ${car ? `${car.brand} ${car.model}` : 'N/A'}`);
+  } else {
+    setSelectedMatriculeObj(null);
+    setMatriculeSearchTerm('');
+  }
+
+  // Ferme la liste des résultats (le terme de recherche étant défini, la liste disparaît)
+};
 
   const clearReservationSelection = () => {
     setSelectedReservationObj(null);
     setReservationSearchTerm('');
-    setFilteredReservationsList([]);
     setFormData(prev => ({ ...prev, reservation_id: '' }));
   };
 
@@ -992,7 +1057,7 @@ export default function AdminAccidents() {
           <input type="hidden" name="client_id" value={formData.client_id} />
         </div>
 
-        {/* Reservation - searchable */}
+        {/* Reservation - searchable with date/time filters */}
         <div className="inline-field" style={{ gridColumn: "1 / -1" }}>
           <label>Réservation (optionnel)</label>
           <div className="inline-search-section">
@@ -1017,6 +1082,7 @@ export default function AdminAccidents() {
               )}
             </div>
 
+            {/* Show filtered results whenever there are any */}
             {filteredReservationsList.length > 0 && (
               <div className="inline-results">
                 {filteredReservationsList.map(res => {
@@ -1029,11 +1095,25 @@ export default function AdminAccidents() {
                         <div className="inline-result-details">
                           <span>{new Date(res.start_date).toLocaleDateString("fr-FR")} → {new Date(res.end_date).toLocaleDateString("fr-FR")}</span>
                           <span>Client: {client ? `${client.prenom} ${client.nom}` : 'N/A'}</span>
+                          {res.start_time && <span>De {res.start_time} à {res.end_time}</span>}
                         </div>
                       </div>
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* No results message when filters are applied but no matches */}
+            {(formData.matricule_id || formData.date_accident || reservationSearchTerm) && filteredReservationsList.length === 0 && (
+              <div className="inline-no-results">
+                {formData.matricule_id && formData.date_accident 
+                  ? 'Aucune réservation trouvée pour ce matricule et cette date.'
+                  : formData.matricule_id 
+                  ? 'Aucune réservation trouvée pour ce matricule.'
+                  : formData.date_accident 
+                  ? 'Aucune réservation trouvée pour cette date.'
+                  : 'Aucune réservation trouvée.'}
               </div>
             )}
 
@@ -1043,16 +1123,15 @@ export default function AdminAccidents() {
                 <div>
                   <strong>Réservation sélectionnée</strong>
                   <p>#{selectedReservationObj.id} - {new Date(selectedReservationObj.start_date).toLocaleDateString("fr-FR")} → {new Date(selectedReservationObj.end_date).toLocaleDateString("fr-FR")}</p>
+                  <p style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Client: {clients.find(c => c.id === selectedReservationObj.client_id)?.prenom} {clients.find(c => c.id === selectedReservationObj.client_id)?.nom}
+                  </p>
                 </div>
               </div>
             )}
 
-            {!selectedReservationObj && reservationSearchTerm.trim() !== "" && filteredReservationsList.length === 0 && (
-              <div className="inline-no-results">Aucune réservation trouvée pour ce matricule.</div>
-            )}
-
-            {!selectedMatriculeObj && reservationSearchTerm.trim() !== "" && (
-              <div className="field-hint warning">Veuillez d'abord sélectionner un matricule pour voir les réservations.</div>
+            {!selectedReservationObj && !formData.matricule_id && reservationSearchTerm.trim() !== "" && filteredReservationsList.length === 0 && (
+              <div className="field-hint warning">Veuillez d'abord sélectionner un matricule et une date pour voir les réservations.</div>
             )}
           </div>
           <input type="hidden" name="reservation_id" value={formData.reservation_id} />
@@ -1201,6 +1280,16 @@ export default function AdminAccidents() {
           </select>
         </div>
         <div className="inline-field">
+          <label>Numéro de devis</label>
+          <input
+            type="text"
+            value={formData.estimate_number}
+            onChange={(e) => setFormData({...formData, estimate_number: e.target.value})}
+            className="inline-input"
+            placeholder="DEV-2026-001"
+          />
+        </div>
+        <div className="inline-field">
           <label>Franchise (DH)</label>
           <input
             type="number"
@@ -1277,16 +1366,6 @@ export default function AdminAccidents() {
                   <tr style={{ borderTop: '2px solid #0f172a' }}>
                     <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total HT</td>
                     <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.estimate_total_ht} DH</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>TVA (20%)</td>
-                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.estimate_tva} DH</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total TTC</td>
-                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.estimate_total_ttc} DH</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -1390,6 +1469,15 @@ export default function AdminAccidents() {
           />
         </div>
         <div className="inline-field" style={{ gridColumn: "1 / -1" }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+            <button
+              type="button"
+              className="inline-secondary-btn"
+              onClick={copyEstimateToInvoice}
+            >
+              <Copy size={16} /> Copier le devis
+            </button>
+          </div>
           <label>Articles de la facture</label>
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
             {formData.invoice_items.length === 0 ? (
@@ -1456,16 +1544,6 @@ export default function AdminAccidents() {
                   <tr style={{ borderTop: '2px solid #0f172a' }}>
                     <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total HT</td>
                     <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.invoice_total_ht} DH</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>TVA (20%)</td>
-                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.invoice_tva} DH</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan="3" style={{ padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>Total TTC</td>
-                    <td style={{ padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{formData.invoice_total_ttc} DH</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -2113,15 +2191,15 @@ export default function AdminAccidents() {
               </table>
             </div>
             {totalPages > 1 && (
-  <PaginationControls
-    currentPage={currentPage}
-    totalPages={totalPages}
-    onPageChange={setCurrentPage}
-    itemsPerPage={itemsPerPage}
-    onItemsPerPageChange={setItemsPerPage}
-    totalItems={filteredAccidents.length}
-  />
-)}
+              <PaginationControls
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                onItemsPerPageChange={setItemsPerPage}
+                totalItems={filteredAccidents.length}
+              />
+            )}
           </div>
         </div>
       )}

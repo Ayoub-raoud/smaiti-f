@@ -60,9 +60,9 @@ const translations = {
     // Contact
     'contact.title': 'Contactez-nous',
     'contact.subtitle': 'Une question ? Notre équipe est là pour vous répondre.',
-    'contact.address': '12 Avenue de l\'Opéra, 75001 Paris',
-    'contact.phone': '+212 1 23 45 67 89',
-    'contact.email': 'contact@atlasrent.fr',
+    'contact.address': 'BASSATINE AL OULFA GH 3 IMMEUBLE 14 N°56 AL OULFA - CASABLANCA',
+    'contact.phone': '+212 665 921 921',
+    'contact.email': 'smaiticar@gmail.com',
     'contact.hours': 'Lun-Ven: 9h-19h, Sam: 10h-17h',
 
     // Footer
@@ -136,9 +136,9 @@ const translations = {
     // Contact
     'contact.title': 'اتصل بنا',
     'contact.subtitle': 'لديك سؤال؟ فريقنا في انتظارك.',
-    'contact.address': '12 شارع الأوبرا، 75001 باريس',
-    'contact.phone': '+33 1 23 45 67 89',
-    'contact.email': 'contact@atlasrent.fr',
+    'contact.address': 'بساتين الألفة GH 3 مبنى 14 رقم 56 الألفة - الدار البيضاء',
+    'contact.phone': '921 921 665 212+',
+    'contact.email': 'smaiticar@gmail.com',
     'contact.hours': 'الإثنين-الجمعة: 9-19، السبت: 10-17',
 
     // Footer

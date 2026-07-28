@@ -6,7 +6,7 @@ import permissionReducer from './permissionSlice';
 
 // Configuration d'Axios avec baseURL
 const api = axios.create({
-  baseURL: "https://smaiti-b-production.up.railway.app/api",
+  baseURL: "http://localhost:8000/api",
   headers: {
     "Accept": "application/json",
     "Content-Type": "application/json"
@@ -630,7 +630,69 @@ export const deleteReservation = createAsyncThunk(
     }
   }
 );
+// ==============================================
+// 🏢 Sous-Locations Async Actions
+// ==============================================
 
+export const fetchSousLocations = createAsyncThunk(
+  "sousLocations/fetchAll",
+  async (_, thunkAPI) => {
+    try {
+      const response = await api.get("/sous-locations");
+      return response.data.sous_locations;
+    } catch (error) {
+      return handleApiError(error, thunkAPI);
+    }
+  }
+);
+
+export const createSousLocation = createAsyncThunk(
+  "sousLocations/create",
+  async (data, thunkAPI) => {
+    try {
+      const response = await api.post("/sous-locations", data);
+      return response.data.sous_location;
+    } catch (error) {
+      return handleApiError(error, thunkAPI);
+    }
+  }
+);
+
+export const fetchSousLocationDetails = createAsyncThunk(
+  "sousLocations/fetchDetails",
+  async (id, thunkAPI) => {
+    try {
+      const response = await api.get(`/sous-locations/${id}`);
+      return response.data.sous_location;
+    } catch (error) {
+      return handleApiError(error, thunkAPI);
+    }
+  }
+);
+
+export const updateSousLocation = createAsyncThunk(
+  "sousLocations/update",
+  async ({ id, data }, thunkAPI) => {
+    try {
+      const response = await api.put(`/sous-locations/${id}`, data);
+      return response.data.sous_location;
+    } catch (error) {
+      return handleApiError(error, thunkAPI);
+    }
+  }
+);
+
+export const deleteSousLocation = createAsyncThunk(
+  "sousLocations/delete",
+  async (id, thunkAPI) => {
+    try {
+      await api.delete(`/sous-locations/${id}`);
+      return id;
+    } catch (error) {
+      return handleApiError(error, thunkAPI);
+    }
+  }
+);
 // Contacts
 export const fetchContacts = createAsyncThunk(
   "contacts/fetchAll", 
@@ -1215,7 +1277,55 @@ const carsSlice = createSlice({
       });
   }
 });
+// ==============================================
+// 🏢 Sous-Locations Slice
+// ==============================================
+const sousLocationsSlice = createSlice({
+  name: "sousLocations",
+  initialState: {
+    list: [],
+    loading: false,
+    error: null,
+    selected: null,
+  },
+  reducers: {
+    clearSelectedSousLocation: (state) => {
+      state.selected = null;
+    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchSousLocations.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchSousLocations.fulfilled, (state, action) => {
+        state.loading = false;
+        state.list = action.payload;
+      })
+      .addCase(fetchSousLocations.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      .addCase(createSousLocation.fulfilled, (state, action) => {
+        state.list.push(action.payload);
+      })
+      .addCase(fetchSousLocationDetails.fulfilled, (state, action) => {
+        state.selected = action.payload;
+      })
+      .addCase(updateSousLocation.fulfilled, (state, action) => {
+        const index = state.list.findIndex(sl => sl.id === action.payload.id);
+        if (index !== -1) state.list[index] = action.payload;
+        if (state.selected?.id === action.payload.id) state.selected = action.payload;
+      })
+      .addCase(deleteSousLocation.fulfilled, (state, action) => {
+        state.list = state.list.filter(sl => sl.id !== action.payload);
+        if (state.selected?.id === action.payload) state.selected = null;
+      });
+  }
+});
 
+export const { clearSelectedSousLocation } = sousLocationsSlice.actions;
 // Clients Slice
 const clientsSlice = createSlice({
   name: "clients",
@@ -1575,6 +1685,7 @@ const store = configureStore({
     permissions: permissionReducer,
     garages: garagesSlice.reducer,
     financings: financingsSlice.reducer,
+    sousLocations: sousLocationsSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -1682,7 +1793,10 @@ export const selectReservations = (state) => state.reservations.list;
 export const selectReservationsLoading = (state) => state.reservations.loading;
 export const selectReservationsError = (state) => state.reservations.error;
 export const selectReservationsLastUpdated = (state) => state.reservations.lastUpdated;
-
+// Sous-Locations Selectors
+export const selectSousLocations = (state) => state.sousLocations.list;
+export const selectSousLocationsLoading = (state) => state.sousLocations.loading;
+export const selectSelectedSousLocation = (state) => state.sousLocations.selected;
 // Contacts Selectors
 export const selectContacts = (state) => state.contacts.list;
 export const selectContactsLoading = (state) => state.contacts.loading;

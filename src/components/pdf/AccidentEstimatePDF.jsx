@@ -1,49 +1,48 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet, Font, Svg, Circle } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Svg, Circle } from '@react-pdf/renderer';
 
-// Standard fonts are built-in. Using Times-Roman for logo and Helvetica for details to match the physical documents.
 const styles = StyleSheet.create({
   page: {
-    padding: 35,
+    padding: 25,
     fontFamily: 'Helvetica',
     backgroundColor: '#ffffff',
   },
   headerContainer: {
     textAlign: 'center',
-    marginBottom: 15,
+    marginBottom: 25,
   },
   logo: {
     fontFamily: 'Times-Roman',
-    fontSize: 24,
+    fontSize: 34,
     fontWeight: 'bold',
-    color: '#d4af37', // Gold/Ochre color from image
+    color: '#d4af37',
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
   slogan: {
-    fontSize: 9,
+    fontSize: 14,
     color: '#000000',
-    marginTop: 2,
+    marginTop: 4,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   docNumber: {
-    fontSize: 14,
+    fontSize: 22,
     fontWeight: 'bold',
-    marginTop: 6,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 12,
     color: '#1a1a1a',
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    fontSize: 9,
-    marginBottom: 3,
+    fontSize: 14,
+    marginBottom: 6,
   },
   infoRowLeft: {
     flexDirection: 'row',
-    fontSize: 9,
-    marginBottom: 3,
+    fontSize: 14,
+    marginBottom: 6,
   },
   label: {
     fontWeight: 'bold',
@@ -52,37 +51,40 @@ const styles = StyleSheet.create({
     marginLeft: 5,
   },
   table: {
-    marginTop: 15,
-    borderWidth: 1,
+    marginTop: 20,
+    borderWidth: 2,
     borderColor: '#000000',
     borderStyle: 'solid',
   },
   tableHeader: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
+    borderBottomWidth: 2,
     borderBottomColor: '#000000',
-    paddingVertical: 4,
-    fontSize: 9,
+    paddingVertical: 12,
+    fontSize: 16,
     fontWeight: 'bold',
     textTransform: 'uppercase',
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: 2.5,
-    fontSize: 8,
+    paddingVertical: 10,
+    fontSize: 15,
     color: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#000000',
+    borderBottomStyle: 'solid',
   },
   tableTotal: {
     flexDirection: 'row',
-    borderTopWidth: 1,
+    borderTopWidth: 3,
     borderTopColor: '#000000',
-    paddingVertical: 3,
-    fontSize: 8,
+    paddingVertical: 12,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   colDesignation: {
     flex: 8,
-    paddingLeft: 5,
+    paddingLeft: 8,
   },
   colQty: {
     flex: 2,
@@ -91,19 +93,19 @@ const styles = StyleSheet.create({
   colMontant: {
     flex: 5,
     textAlign: 'right',
-    paddingRight: 5,
+    paddingRight: 8,
   },
   footer: {
-    marginTop: 15,
+    marginTop: 25,
     textAlign: 'center',
-    fontSize: 8,
+    fontSize: 14,
     color: '#000000',
     fontFamily: 'Helvetica',
   },
   stampWrapper: {
     position: 'absolute',
     left: 180,
-    bottom: 45,
+    bottom: 40,
     transform: 'rotate(-15deg)',
   },
 });
@@ -112,7 +114,6 @@ const toNumber = (val) => Number(val) || 0;
 const formatCurrency = (val) => toNumber(val).toFixed(2) + ' DH';
 
 export const AccidentEstimatePDF = ({ accident }) => {
-  // Setup variables from accident data
   const items = accident.estimate_items || [];
   let totalHT = 0;
   const rows = items.map((item) => {
@@ -131,7 +132,7 @@ export const AccidentEstimatePDF = ({ accident }) => {
           <Text style={styles.logo}>Garage Tolerie</Text>
           <Text style={styles.slogan}>MECANIQUE GENERALE-TOLERIE & PEINTURE</Text>
           <Text style={styles.docNumber}>
-            DEVIS N° {accident.accident_number || accident.id || '560'}
+            DEVIS N° {accident.estimate_number || accident.accident_number || accident.id || '560'}
           </Text>
         </View>
 
@@ -142,7 +143,7 @@ export const AccidentEstimatePDF = ({ accident }) => {
               CASA LE : {new Date().toLocaleDateString('fr-FR')}
             </Text>
             <Text>
-              CLIENT : {accident.client?.prenom || ''} {accident.client?.nom || ''}
+              CLIENT : SMAITI CAR
             </Text>
           </View>
           <View style={styles.infoRowLeft}>
@@ -153,9 +154,15 @@ export const AccidentEstimatePDF = ({ accident }) => {
             <Text style={styles.label}>MATRICULE :</Text>
             <Text style={styles.value}>{accident.matricule?.matricule_code || '56159-A-11'}</Text>
           </View>
+          <View style={styles.infoRowLeft}>
+            <Text style={styles.label}>DATE DE SINISTRE :</Text>
+            <Text style={styles.value}>
+              {accident.date_accident ? new Date(accident.date_accident).toLocaleDateString('fr-FR') : '—'}
+            </Text>
+          </View>
         </View>
 
-        {/* Items Table */}
+        {/* Table */}
         <View style={styles.table}>
           <View style={styles.tableHeader}>
             <Text style={styles.colDesignation}>Désignation</Text>
@@ -176,21 +183,22 @@ export const AccidentEstimatePDF = ({ accident }) => {
           </View>
         </View>
 
-        {/* Footer & Stamp */}
+        {/* Footer */}
         <Text style={styles.footer}>
-          ARRETEE LA PRESENTE FACTURE A LA SOMME DE : VINGT TROIS MILLE SEPT CENTS DIRHAMS
+          ARRETEE LA PRESENTE FACTURE À LA SOMME DE : DIRHAMS
         </Text>
 
+        {/* Stamp */}
         <View style={styles.stampWrapper}>
-          <Svg width="100" height="100" viewBox="0 0 100 100">
-            <Circle cx="50" cy="50" r="42" stroke="#1e40af" strokeWidth="2" fill="none" />
-            <Text x="50" y="40" fill="#1e40af" fontSize="8" fontWeight="bold" textAnchor="middle">
+          <Svg width="120" height="120" viewBox="0 0 120 120">
+            <Circle cx="60" cy="60" r="50" stroke="#1e40af" strokeWidth="2" fill="none" />
+            <Text x="60" y="48" fill="#1e40af" fontSize="10" fontWeight="bold" textAnchor="middle">
               Garage Tolerie
             </Text>
-            <Text x="50" y="55" fill="#1e40af" fontSize="6" textAnchor="middle">
+            <Text x="60" y="66" fill="#1e40af" fontSize="8" textAnchor="middle">
               Boulevard ...
             </Text>
-            <Text x="50" y="70" fill="#1e40af" fontSize="6" textAnchor="middle">
+            <Text x="60" y="84" fill="#1e40af" fontSize="8" textAnchor="middle">
               Tel. 06 66 96 65 86
             </Text>
           </Svg>

@@ -1,12 +1,12 @@
 // src/pages/admin/AdminDashboard.jsx
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector,useStore  } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import {
   fetchCars, fetchReservations, fetchClients, fetchAccidents, fetchMatricules, fetchContacts, fetchUtilisateurs,
   selectCars, selectCarsLoading, selectReservations, selectReservationsLoading,
   selectClients, selectAccidents, selectMatricules, selectContacts, selectUtilisateurs, selectUser,
-  createReservation, updateReservation, refreshMatricules,
+  createReservation, updateReservation, refreshMatricules,selectSousLocations ,fetchSousLocations ,
   addPaymentToReservation, removePaymentFromReservation
 } from "../../Redux/store";
 import {
@@ -24,7 +24,7 @@ import {
   Mail as MailIcon, AlertTriangle as AlertIcon, CheckCircle as SuccessIcon,
   XCircle as ErrorIcon, Info as InfoIcon, Sparkles, Star, Activity, Upload,
   FolderOpen, Edit, Save as SaveIcon, Zap, Loader, ChevronLeft,
-  ChevronUp, Link2, Check,CalendarClock ,AlarmClock } from "lucide-react";
+  ChevronUp, Link2, Check,CalendarClock ,AlarmClock ,FileCheck  } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -48,15 +48,34 @@ const blobToBase64 = (blob) =>
   });
 
 const formatMoney = (val) => `${Number(val || 0).toFixed(2)} DH`;
-const API_URL = "https://smaiti-b-production.up.railway.app/api";
-
+const API_URL = "http://localhost:8000/api";
+// Ajouter cette fonction après les imports
+const downloadAndOpenPDF = (doc, filename) => {
+  const pdfBlob = doc.output('blob');
+  const url = URL.createObjectURL(pdfBlob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
 // ==================== Report Modal Components ====================
 // ---------- Create Report Modal (with dropdown above) ----------
 const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
   const dispatch = useDispatch();
   const clients = useSelector(selectClients);
   const reservations = useSelector(selectReservations);
-
+// Ajoutez cette fonction
+const getClientRemaining = (clientId) => {
+  if (!clientId) return 0;
+  const allowedStatuses = ['completed', 'confirmed', 'retard'];
+  return reservations
+    .filter(r => r.client_id === clientId && allowedStatuses.includes(r.status))
+    .reduce((sum, r) => sum + (parseFloat(r.remaining_amount) || 0), 0);
+};
   const [rows, setRows] = useState([
     { id: Date.now(), date: new Date().toISOString().slice(0, 10), client_id: "", client_name: "", price: 0 },
   ]);
@@ -187,7 +206,15 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
       toast.warning("Veuillez sélectionner un client existant (utilisez la recherche) et saisir un prix supérieur à 0.");
       return;
     }
-
+for (const row of validRows) {
+  const totalRemaining = getClientRemaining(row.client_id);
+  if (row.price > totalRemaining) {
+    const clientName = row.client_name || `Client ${row.client_id}`;
+    toast.error(`❌ Le montant (${row.price} DH) pour ${clientName} dépasse le solde restant (${totalRemaining} DH).`);
+    setGenerating(false);
+    return; // arrête la génération
+  }
+}
     setGenerating(true);
 
     try {
@@ -248,36 +275,66 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
       }
 
       // Add payments
-      let paymentErrors = 0;
-      for (const row of validRows) {
-        try {
-          const clientReservations = reservations.filter(r => r.client_id === row.client_id);
-          let targetReservation = clientReservations.find(r => r.status === 'confirmed' && r.remaining_amount > 0);
-          if (!targetReservation) {
-            targetReservation = clientReservations
-              .filter(r => r.remaining_amount > 0)
-              .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0];
-          }
-          if (targetReservation) {
-            await dispatch(addPaymentToReservation({
-              reservationId: targetReservation.id,
-              paymentData: {
-                amount: row.price,
-                date: row.date,
-                method: 'cash',
-                notes: `Rapport manuel (${fileName})`
-              }
-            })).unwrap();
-          } else {
-            console.warn(`No eligible reservation found for client ${row.client_name} (ID: ${row.client_id})`);
-            paymentErrors++;
-          }
-        } catch (err) {
-          console.error(`Failed to add payment for client ${row.client_name}:`, err);
-          paymentErrors++;
-        }
-      }
+      // Dans MultiRowReportModal, remplacer la boucle for (const row of validRows) par ceci :
+// Valider que chaque prix ne dépasse pas le solde restant du client
+let paymentErrors = 0;
+for (const row of validRows) {
+  try {
+    const clientReservations = reservations.filter(r => r.client_id === row.client_id);
+    // Ordre de priorité : completed > confirmed > retard
+    const priorityOrder = ['completed', 'confirmed', 'retard'];
+    const sortedReservations = clientReservations
+      .filter(r => r.remaining_amount > 0)
+      .sort((a, b) => {
+        const indexA = priorityOrder.indexOf(a.status);
+        const indexB = priorityOrder.indexOf(b.status);
+        if (indexA !== indexB) return indexA - indexB;
+        // À statut égal, la plus ancienne en premier
+        return new Date(a.start_date) - new Date(b.start_date);
+      });
 
+    let remainingAmount = row.price;
+    let paymentsAdded = 0;
+
+    for (const res of sortedReservations) {
+      if (remainingAmount <= 0) break;
+      const amountToPay = Math.min(remainingAmount, res.remaining_amount);
+      if (amountToPay > 0) {
+        await dispatch(addPaymentToReservation({
+          reservationId: res.id,
+          paymentData: {
+            amount: amountToPay,
+            date: row.date,
+            method: 'cash',
+            notes: `Rapport manuel (${fileName})`
+          }
+        })).unwrap();
+        remainingAmount -= amountToPay;
+        paymentsAdded++;
+      }
+    }
+
+    if (remainingAmount > 0) {
+      // Montant non affecté car plus de réservations éligibles
+      console.warn(`Montant restant ${remainingAmount} non affecté pour ${row.client_name}`);
+      // On peut décider de créer une note ou d'incrémenter paymentErrors
+      // paymentErrors++; // décommenter si on veut signaler une erreur
+    }
+  } catch (err) {
+    console.error(`Échec de l'ajout de paiement pour ${row.client_name} :`, err);
+    paymentErrors++;
+  }
+}
+// Définir une date de référence pour chaque client afin d'éviter les doublons lors des synchronisations futures
+const now = new Date().toISOString();
+for (const row of validRows) {
+  const clientId = row.client_id;
+  const date = new Date(row.date + 'T00:00:00Z');
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const storageKey = `report_last_sync_${clientId}_${year}_${month}`;
+  localStorage.setItem(storageKey, now);
+}
       if (paymentErrors > 0) {
         toast.warning(`Rapport sauvegardé, mais ${paymentErrors} paiement(s) n'ont pas pu être appliqués.`);
       } else {
@@ -590,10 +647,20 @@ const MultiRowReportModal = ({ isOpen, onClose, onReportSaved }) => {
   );
 };
 
+// ==================== EditReportModal (FULLY REVISED) ====================
+// ==================== EditReportModal (FULLY REVISED) ====================
 const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations }) => {
   const dispatch = useDispatch();
+  const store = useStore(); // ✅ import useStore
   const clients = useSelector(selectClients);
-
+// Ajoutez cette fonction
+const getClientRemaining = (clientId) => {
+  if (!clientId) return 0;
+  const allowedStatuses = ['completed', 'confirmed', 'retard'];
+  return reservations
+    .filter(r => r.client_id === clientId && allowedStatuses.includes(r.status))
+    .reduce((sum, r) => sum + (parseFloat(r.remaining_amount) || 0), 0);
+};
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(false);
   const [numberOfLines, setNumberOfLines] = useState(1);
@@ -603,7 +670,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
   const [searchTerms, setSearchTerms] = useState({});
   const [activeRowId, setActiveRowId] = useState(null);
 
-  // ---------- useEffect (remplacement) ----------
+  // ---------- useEffect ----------
   useEffect(() => {
     if (report && report.rows) {
       const parsed =
@@ -617,6 +684,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
         client_id: row.client_id || "",
         client_name: row.client_name || row.nom || "",
         price: row.price || 0,
+        isOriginal: true,
       }));
 
       setRows(newRows);
@@ -633,7 +701,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
     }
   }, [report]);
 
-  // ---------- handleSelectClient (remplacement) ----------
+  // ---------- handleSelectClient ----------
   const handleSelectClient = (rowId, client) => {
     const fullName = `${client.prenom} ${client.nom}`;
 
@@ -671,7 +739,7 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
   const addRow = () => {
     setRows([
       ...rows,
-      { id: Date.now(), date: new Date().toISOString().slice(0, 10), client_id: "", client_name: "", price: 0 },
+      { id: Date.now(), date: new Date().toISOString().slice(0, 10), client_id: "", client_name: "", price: 0 ,isOriginal: false},
     ]);
   };
 
@@ -712,157 +780,284 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
 
   const calculateTotal = () => rows.reduce((sum, row) => sum + Number(row.price), 0);
 
-  const handleSave = async () => {
-    const updatedRows = rows.map(row => {
-      if (!row.client_id && row.client_name) {
-        const trimmed = row.client_name.trim();
-        const found = clients.find(c => 
-          `${c.prenom} ${c.nom}`.toLowerCase() === trimmed.toLowerCase()
-        );
-        if (found) {
-          return { ...row, client_id: found.id };
+ const handleSave = async () => {
+  // 1. Valider et nettoyer les lignes
+  const updatedRows = rows.map(row => {
+    if (!row.client_id && row.client_name) {
+      const trimmed = row.client_name.trim();
+      const found = clients.find(c => 
+        `${c.prenom} ${c.nom}`.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (found) {
+        return { ...row, client_id: found.id };
+      }
+    }
+    return row;
+  });
+  setRows(updatedRows);
+
+  const validRows = updatedRows.filter((row) => row.client_id && parseFloat(row.price) > 0);
+  if (validRows.length === 0) {
+    toast.warning("Ajoutez au moins une ligne valide");
+    return;
+  }
+
+  setSaving(true);
+  let unallocatedCount = 0;
+
+  try {
+    const reportFileName = report.file_name;
+
+    // Récupérer les anciennes lignes du rapport
+    let oldRows = [];
+    if (report.rows) {
+      try {
+        oldRows = typeof report.rows === 'string' ? JSON.parse(report.rows) : report.rows;
+      } catch { oldRows = []; }
+    }
+    if (!Array.isArray(oldRows)) oldRows = [];
+
+    // Grouper les anciennes lignes par client_id
+    const oldTotals = {};
+    oldRows.forEach(row => {
+      const clientId = row.client_id;
+      if (!clientId) return;
+      oldTotals[clientId] = (oldTotals[clientId] || 0) + Number(row.price);
+    });
+
+    // Grouper les nouvelles lignes par client_id
+    const newTotals = {};
+    validRows.forEach(row => {
+      const clientId = row.client_id;
+      if (!clientId) return;
+      newTotals[clientId] = (newTotals[clientId] || 0) + Number(row.price);
+    });
+
+    // Récupérer les réservations fraîches du store
+    const freshReservations = store.getState().reservations.list || [];
+    for (const clientId of Object.keys(newTotals)) {
+  const oldTotal = oldTotals[clientId] || 0;
+  const newTotal = newTotals[clientId];
+  if (newTotal > oldTotal) {
+    const diff = newTotal - oldTotal;
+    const clientReservations = freshReservations.filter(r => r.client_id == clientId);
+    const totalRemaining = clientReservations.reduce((sum, r) => sum + (parseFloat(r.remaining_amount) || 0), 0);
+    if (diff > totalRemaining) {
+      const client = clients.find(c => c.id == clientId);
+      const clientName = client ? `${client.prenom} ${client.nom}` : `Client ${clientId}`;
+      toast.error(`❌ L'augmentation pour ${clientName} (${diff} DH) dépasse le solde restant (${totalRemaining} DH).`);
+      setSaving(false);
+      return;
+    }
+  }
+}
+    const remainingMap = {};
+    freshReservations.forEach(r => {
+      remainingMap[r.id] = r.remaining_amount || 0;
+    });
+
+    const priorityOrder = ['completed', 'confirmed', 'retard'];
+
+    // Pour chaque client présent dans les nouvelles lignes
+    for (const clientId of Object.keys(newTotals)) {
+      const oldTotal = oldTotals[clientId] || 0;
+      const newTotal = newTotals[clientId];
+      const diff = newTotal - oldTotal;
+
+      if (Math.abs(diff) < 0.01) continue; // pas de changement
+
+      const clientReservations = freshReservations.filter(r => r.client_id == clientId);
+
+      // --- CAS 1 : Augmentation ---
+      if (diff > 0) {
+        let amountToAdd = diff;
+
+        // 1ère passe : réservations avec solde > 0
+        const sortedPositive = clientReservations
+          .filter(r => (remainingMap[r.id] || 0) > 0)
+          .sort((a, b) => {
+            const idxA = priorityOrder.indexOf(a.status);
+            const idxB = priorityOrder.indexOf(b.status);
+            if (idxA !== idxB) return idxA - idxB;
+            return new Date(a.start_date) - new Date(b.start_date);
+          });
+
+        for (const res of sortedPositive) {
+          if (amountToAdd <= 0) break;
+          const available = remainingMap[res.id] || 0;
+          const amountToPay = Math.min(amountToAdd, available);
+          if (amountToPay > 0) {
+            await dispatch(addPaymentToReservation({
+              reservationId: res.id,
+              paymentData: {
+                amount: amountToPay,
+                date: new Date().toISOString().slice(0, 10),
+                method: 'cash',
+                notes: `Rapport modifié (${reportFileName})`
+              }
+            })).unwrap();
+            remainingMap[res.id] -= amountToPay;
+            amountToAdd -= amountToPay;
+          }
+        }
+
+        // 2ème passe : s'il reste, on met sur la réservation la plus prioritaire (même si solde = 0)
+        if (amountToAdd > 0) {
+          const sortedAll = clientReservations
+            .sort((a, b) => {
+              const idxA = priorityOrder.indexOf(a.status);
+              const idxB = priorityOrder.indexOf(b.status);
+              if (idxA !== idxB) return idxA - idxB;
+              return new Date(a.start_date) - new Date(b.start_date);
+            });
+          if (sortedAll.length > 0) {
+            const topRes = sortedAll[0];
+            await dispatch(addPaymentToReservation({
+              reservationId: topRes.id,
+              paymentData: {
+                amount: amountToAdd,
+                date: new Date().toISOString().slice(0, 10),
+                method: 'cash',
+                notes: `Rapport modifié (${reportFileName})`
+              }
+            })).unwrap();
+            remainingMap[topRes.id] -= amountToAdd;
+            amountToAdd = 0;
+          } else {
+            unallocatedCount += amountToAdd;
+            console.warn(`Aucune réservation pour le client ${clientId}, ${amountToAdd} DH non affectés`);
+          }
         }
       }
-      return row;
-    });
-    setRows(updatedRows);
 
-    const validRows = updatedRows.filter((row) => row.client_id && parseFloat(row.price) > 0);
-    if (validRows.length === 0) {
-      toast.warning("Ajoutez au moins une ligne valide");
+      // --- CAS 2 : Diminution ---
+      if (diff < 0) {
+        const amountToRemove = -diff;
+        let removed = 0;
+
+        // Récupérer tous les paiements liés à ce rapport pour ce client
+        const paymentsToConsider = [];
+        for (const res of clientReservations) {
+          if (res.payment_history && Array.isArray(res.payment_history)) {
+            res.payment_history.forEach(p => {
+              if (p.notes && p.notes.includes(reportFileName)) {
+                paymentsToConsider.push({
+                  ...p,
+                  reservationId: res.id,
+                });
+              }
+            });
+          }
+        }
+
+        // Trier du plus récent au plus ancien
+        paymentsToConsider.sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date));
+
+        for (const payment of paymentsToConsider) {
+          if (removed >= amountToRemove) break;
+          const remainingToRemove = amountToRemove - removed;
+          const amountToDelete = Math.min(payment.amount, remainingToRemove);
+          if (amountToDelete > 0) {
+            // Supprimer le paiement complet (ou partiel ? On supprime complet)
+            await dispatch(removePaymentFromReservation({
+              reservationId: payment.reservationId,
+              paymentId: payment.id
+            })).unwrap();
+            removed += payment.amount;
+          }
+        }
+
+        if (removed < amountToRemove) {
+          unallocatedCount += (amountToRemove - removed);
+          console.warn(`Impossible de supprimer ${amountToRemove - removed} DH pour le client ${clientId} (pas assez de paiements)`);
+        }
+      }
+    }
+
+    // --- Mise à jour du rapport (PDF et base de données) ---
+    const paperElement = pdfPaperRef.current;
+    if (!paperElement) {
+      toast.error("Impossible de capturer le rapport");
       return;
     }
 
-    setSaving(true);
-    try {
-      const reportFileName = report.file_name;
-      for (const row of validRows) {
-        const clientReservations = reservations.filter(r => r.client_id === row.client_id);
-        for (const res of clientReservations) {
-          if (res.payment_history && Array.isArray(res.payment_history)) {
-            const paymentsToRemove = res.payment_history.filter(p => 
-              p.notes && (
-                p.notes.includes(reportFileName) ||
-                p.notes.includes(`Rapport manuel (${reportFileName})`) ||
-                p.notes.includes(`Rapport modifié (${reportFileName})`)
-              )
-            );
-            for (const payment of paymentsToRemove) {
-              try {
-                await dispatch(removePaymentFromReservation({
-                  reservationId: res.id,
-                  paymentId: payment.id
-                })).unwrap();
-              } catch (err) {
-                console.warn(`Failed to remove payment #${payment.id} for reservation #${res.id}:`, err);
-              }
-            }
-          }
-        }
-      }
+    const canvas = await html2canvas(paperElement, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+    });
 
-      const paperElement = pdfPaperRef.current;
-      if (!paperElement) {
-        toast.error("Impossible de capturer le rapport");
-        return;
-      }
+    const imgData = canvas.toDataURL('image/png');
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
 
-      const canvas = await html2canvas(paperElement, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-      });
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      const imgData = canvas.toDataURL('image/png');
-      const doc = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      if (imgHeight > pageHeight) {
-        const scale = pageHeight / imgHeight;
-        const scaledWidth = imgWidth * scale;
-        const scaledHeight = imgHeight * scale;
-        doc.addImage(imgData, 'PNG', (pageWidth - scaledWidth) / 2, 0, scaledWidth, scaledHeight);
-      } else {
-        const verticalOffset = (pageHeight - imgHeight) / 2;
-        doc.addImage(imgData, 'PNG', 0, verticalOffset, imgWidth, imgHeight);
-      }
-
-      const fileName = report.file_name || `Rapport_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.pdf`;
-      const pdfBlob = doc.output('blob');
-      const pdfBase64 = await blobToBase64(pdfBlob);
-
-      const token = localStorage.getItem("authToken");
-      const response = await fetch(`${API_URL}/reports/${report.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          file_name: fileName,
-          pdf_data: pdfBase64,
-          rows: validRows.map(r => ({ date: r.date, client_name: r.client_name, client_id: r.client_id, price: r.price })),
-          total_ht: validRows.reduce((sum, row) => sum + Number(row.price), 0),
-        }),
-      });
-
-      if (!response.ok) {
-        toast.error("Erreur lors de la modification");
-        return;
-      }
-
-      let paymentErrors = 0;
-      for (const row of validRows) {
-        try {
-          const clientReservations = reservations.filter(r => r.client_id === row.client_id);
-          let targetReservation = clientReservations.find(r => r.status === 'confirmed' && r.remaining_amount > 0);
-          if (!targetReservation) {
-            targetReservation = clientReservations
-              .filter(r => r.remaining_amount > 0)
-              .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0];
-          }
-          if (targetReservation) {
-            await dispatch(addPaymentToReservation({
-              reservationId: targetReservation.id,
-              paymentData: {
-                amount: row.price,
-                date: row.date,
-                method: 'cash',
-                notes: `Rapport modifié (${fileName})`
-              }
-            })).unwrap();
-          } else {
-            console.warn(`No eligible reservation for client ${row.client_name} (ID: ${row.client_id})`);
-            paymentErrors++;
-          }
-        } catch (err) {
-          console.error(`Error adding payment for client ${row.client_name}:`, err);
-          paymentErrors++;
-        }
-      }
-
-      if (paymentErrors > 0) {
-        toast.warning(`Rapport modifié, mais ${paymentErrors} paiement(s) n'ont pas pu être appliqués.`);
-      } else {
-        toast.success("Rapport modifié et paiements enregistrés");
-      }
-
-      onClose();
-      if (onReportSaved) onReportSaved();
-
-    } catch (err) {
-      console.error(err);
-      toast.error("Erreur lors de la modification du rapport");
-    } finally {
-      setSaving(false);
+    if (imgHeight > pageHeight) {
+      const scale = pageHeight / imgHeight;
+      const scaledWidth = imgWidth * scale;
+      const scaledHeight = imgHeight * scale;
+      doc.addImage(imgData, 'PNG', (pageWidth - scaledWidth) / 2, 0, scaledWidth, scaledHeight);
+    } else {
+      const verticalOffset = (pageHeight - imgHeight) / 2;
+      doc.addImage(imgData, 'PNG', 0, verticalOffset, imgWidth, imgHeight);
     }
-  };
 
+    const fileName = report.file_name || `Rapport_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.pdf`;
+    const pdfBlob = doc.output('blob');
+    const pdfBase64 = await blobToBase64(pdfBlob);
+
+    const token = localStorage.getItem("authToken");
+    const newTotal = validRows.reduce((sum, row) => sum + Number(row.price), 0);
+    const response = await fetch(`${API_URL}/reports/${report.id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        file_name: fileName,
+        pdf_data: pdfBase64,
+        rows: validRows.map(r => ({ date: r.date, client_name: r.client_name, client_id: r.client_id, price: r.price })),
+        total_ht: newTotal,
+      }),
+    });
+
+    if (!response.ok) {
+      toast.error("Erreur lors de la modification");
+      return;
+    }
+const now = new Date().toISOString();
+for (const row of validRows) {
+  const clientId = row.client_id;
+  const date = new Date(row.date + 'T00:00:00Z');
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const storageKey = `report_last_sync_${clientId}_${year}_${month}`;
+  localStorage.setItem(storageKey, now);
+}
+    // --- Toast final ---
+    if (unallocatedCount > 0) {
+      toast.warning(`Rapport modifié, mais ${unallocatedCount} DH non affectés.`);
+    } else {
+      toast.success("Rapport modifié avec succès");
+    }
+
+    onClose();
+    if (onReportSaved) onReportSaved();
+
+  } catch (err) {
+    console.error(err);
+    toast.error("Erreur lors de la modification du rapport");
+  } finally {
+    setSaving(false);
+  }
+};
+
+  // ========== RENDU (inchangé) ==========
   if (!isOpen || !report) return null;
 
   return (
@@ -950,24 +1145,21 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
                             className="report-input"
                             value={row.date}
                             onChange={(e) => updateRow(row.id, "date", e.target.value)}
+                            disabled={row.isOriginal}
+                            style={row.isOriginal ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed' } : {}}
                           />
                         </td>
                         <td style={{ position: "relative" }}>
-                          {/* ---------- Champ client (remplacement) ---------- */}
                           <input
                             type="text"
                             className="report-input"
                             value={searchTerms[row.id] ?? ""}
                             onChange={(e) => {
                               const val = e.target.value;
-
-                              // Update only the search input immediately
                               setSearchTerms((prev) => ({
                                 ...prev,
                                 [row.id]: val,
                               }));
-
-                              // Keep row data synchronized
                               setRows((prevRows) =>
                                 prevRows.map((r) =>
                                   r.id === row.id
@@ -979,9 +1171,10 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
                                     : r
                                 )
                               );
-
                               setActiveRowId(row.id);
                             }}
+                            disabled={row.isOriginal}   // 👈
+  style={row.isOriginal ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed' } : {}}
                             onFocus={() => setActiveRowId(row.id)}
                             placeholder="Rechercher un client..."
                             autoComplete="off"
@@ -1036,7 +1229,8 @@ const EditReportModal = ({ isOpen, onClose, report, onReportSaved, reservations 
                               updateRow(row.id, "price", parseFloat(e.target.value) || 0)
                             }
                             placeholder="0.00"
-                            style={{ textAlign: "right" }}
+                            style={{ textAlign: "right", ...(row.isOriginal ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed' } : {}) }}
+  disabled={row.isOriginal}
                           />
                         </td>
                         <td>
@@ -1572,7 +1766,16 @@ const SignatureBlock = ({ label, signature = "", option = "show" }) => {
 };
 
 // ==================== Component: ManualContract ====================
-const ManualContract = ({ formData, signatures, paperwork, displayOptions, currentUser }) => {
+// ==================== Component: ManualContract (révisé) ====================
+const ManualContract = ({ 
+  formData, 
+  signatures, 
+  paperwork, 
+  displayOptions, 
+  currentUser,
+  containerId = "manual-contract-print" 
+}) => {
+  // Fonctions utilitaires (copiées de ContractLocation)
   const getCurrentUserName = () => {
     let userName = "";
     if (currentUser) {
@@ -1596,285 +1799,555 @@ const ManualContract = ({ formData, signatures, paperwork, displayOptions, curre
     if (!dateString) return "";
     try {
       const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString;
+      if (isNaN(date.getTime())) return "";
       return date.toLocaleDateString("fr-FR");
     } catch {
-      return dateString;
+      return "";
     }
   };
 
   const calculateRentalDays = () => {
-    if (!formData.start_date || !formData.end_date) return "";
-    const start = new Date(formData.start_date);
-    const end = new Date(formData.end_date);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-    const diffTime = Math.abs(end - start);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays === 0 ? 1 : diffDays;
-  };
+  if (!reservation?.start_date || !reservation?.end_date) return null;
+  const start = new Date(reservation.start_date);
+  const end = new Date(reservation.end_date);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  // Vérifier que start <= end
+  if (start > end) {
+    // Inverser si besoin (ou forcer à 1)
+    return 1;
+  }
+  const diffTime = end - start;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays === 0 ? 1 : diffDays;
+};
 
   const getDisplayOption = (section) => displayOptions[section] || "show";
+  const getDisplayValue = (option, actualValue, dashValue = "___________", hideValue = "") => {
+    if (option === "hide") return hideValue;
+    if (option === "dash") return dashValue;
+    return actualValue;
+  };
+
   const currentUserName = getCurrentUserName();
+  const rentalDays = formData.rental_days || calculateRentalDays();
+  const dailyPrice = (formData.total_price && rentalDays) 
+    ? (formData.total_price / rentalDays).toFixed(2) 
+    : formData.price_per_day || "—";
 
+  // Vérifier si un deuxième conducteur est présent
+  const hasSecondDriver = formData.has_second_driver === true && (
+    formData.second_driver_nom || formData.second_driver_prenom
+  );
+
+  // Rendu du contrat
   return (
-    <div className="contract-container" id="manual-contract-print">
-      <header className="contract-header">
-        <div className="header-left">
-          <div className="location-text">LOCATION DE VOITURE</div>
-          <div className="phone-number">0665 921 921</div>
-        </div>
-        <div className="header-center">
-          <img src={logoImage} alt="SMAITI CAR Logo" className="company-logo" onError={(e) => (e.target.style.display = "none")} />
-        </div>
-        <div className="header-right">
-          <div className="arabic-text">كراء السيارات</div>
-          <div className="contract-number-red">
-            MANUAL-{new Date().getFullYear()}-{Math.floor(Math.random() * 10000).toString().padStart(4, "0")}
-          </div>
-        </div>
-      </header>
+    <div className="contract-container-print" id={containerId}>
+      {/* En-tête */}
+      <table className="contract-header-table" cellPadding="0" cellSpacing="0">
+        <tbody>
+          <tr>
+            <td className="header-left">
+              <div className="company-name">SMAITI CAR</div>
+              <div className="company-slogan">LOCATION DE VOITURE</div>
+              <div className="company-phone"><Phone size={12} style={{ marginRight: "4px", display: "inline" }} /> 0665 921 921</div>
+            </td>
+            <td className="header-center">
+              <img src={logoImage} alt="Logo" className="contract-logo-print" />
+            </td>
+            <td className="header-right">
+              <div className="contract-number-box stylish">
+                <div className="contract-number-label">CONTRAT N°</div>
+                <div className="contract-number-value">
+                  MANUAL-{new Date().getFullYear()}-{Math.floor(Math.random() * 10000).toString().padStart(4, "0")}
+                </div>
+              </div>
+              <div className="arabic-text">كراء السيارات</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-      <h1 className="contract-title">CONTRAT DE LOCATION</h1>
+      <div className="contract-title-print">CONTRAT DE LOCATION</div>
 
-      <section className="two-columns-layout">
-        <div className="left-column">
-          {getDisplayOption("clientInfo") !== "hide" && (
-            <div className="section-block">
-              <h2 className="section-header-contract">LOCATAIRE</h2>
-              {getDisplayOption("clientInfo") === "dash" ? (
-                <>
-                  <FormLine label="Nom" value="___________" />
-                  <FormLine label="Prénom" value="___________" />
-                  <FormLine label="Date de Naissance" value="___________" />
-                  <FormLine label="Lieu de Naissance" value="___________" />
-                  <FormLine label="Pièce d'identité (CIN)" value="___________" />
-                  <FormLine label="Expire le" value="___________" />
-                  <FormLine label="Permis de Conduire N°" value="___________" />
-                  <FormLine label="Expire le" value="___________" />
-                  <FormLine label="Adresse" value="___________" />
-                  <FormLine label="Tél." value="___________" />
-                  <FormLine label="Email" value="___________" />
-                </>
-              ) : (
-                <>
-                  <FormLine label="Nom" value={formData.client_nom || ""} />
-                  <FormLine label="Prénom" value={formData.client_prenom || ""} />
-                  <FormLine label="Date de Naissance" value={formData.client_date_naissance || ""} />
-                  <FormLine label="Lieu de Naissance" value={formData.client_lieu_naissance || ""} />
-                  <FormLine label="Pièce d'identité (CIN)" value={formData.client_cin || ""} />
-                  <FormLine label="Expire le" value={formData.client_cin_expiry || ""} />
-                  <FormLine label="Permis de Conduire N°" value={formData.client_permis || ""} />
-                  <FormLine label="Expire le" value={formData.client_permis_expiry || ""} />
-                  <FormLine label="Adresse" value={formData.client_address || ""} />
-                  <FormLine label="Tél." value={formData.client_phone || ""} />
-                  <FormLine label="Email" value={formData.client_email || ""} />
-                </>
-              )}
-            </div>
-          )}
+      {/* Deux colonnes */}
+      <table className="contract-content-table" cellPadding="0" cellSpacing="0">
+        <tbody>
+          <tr>
+            <td className="contract-left-col">
+              {/* LOCATAIRE */}
+              <div className="contract-section">
+                <div className="section-title-print">LOCATAIRE</div>
+                <div className="section-content">
+                  <div className="field-row"><span className="field-label">Nom :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_nom || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Prénom :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_prenom || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Date naissance :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formatDate(formData.client_date_naissance) || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Lieu naissance :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_lieu_naissance || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">CIN :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_cin || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formatDate(formData.client_cin_expiry) || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Permis N° :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_permis || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formatDate(formData.client_permis_expiry) || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Adresse :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_address || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Téléphone :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_phone || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Email :</span><span className="field-value">{getDisplayValue(getDisplayOption("clientInfo"), formData.client_email || "—")}</span></div>
+                </div>
+              </div>
 
-          {getDisplayOption("secondDriver") !== "hide" && formData.has_second_driver && (
-            <div className="section-block">
-              <h2 className="section-header-contract">DEUXIEME CONDUCTEUR</h2>
-              {getDisplayOption("secondDriver") === "dash" ? (
-                <>
-                  <FormLine label="Nom" value="___________" />
-                  <FormLine label="Prénom" value="___________" />
-                  <FormLine label="Date de Naissance" value="___________" />
-                  <FormLine label="Lieu de Naissance" value="___________" />
-                  <FormLine label="Pièce d'identité" value="___________" />
-                  <FormLine label="Permis de Conduire N°" value="___________" />
-                  <FormLine label="Tél." value="___________" />
-                </>
-              ) : (
-                <>
-                  <FormLine label="Nom" value={formData.second_driver_nom || ""} />
-                  <FormLine label="Prénom" value={formData.second_driver_prenom || ""} />
-                  <FormLine label="Date de Naissance" value={formData.second_driver_date_naissance || ""} />
-                  <FormLine label="Lieu de Naissance" value={formData.second_driver_lieu_naissance || ""} />
-                  <FormLine label="Pièce d'identité" value={formData.second_driver_cin || ""} />
-                  <FormLine label="Permis de Conduire N°" value={formData.second_driver_permis || ""} />
-                  <FormLine label="Tél." value={formData.second_driver_phone || ""} />
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="right-column">
-          {getDisplayOption("vehicleInfo") !== "hide" && (
-            <div className="section-block full-height">
-              <h2 className="section-header-contract">INFORMATION SUR LE VÉHICULE</h2>
-              {getDisplayOption("vehicleInfo") === "dash" ? (
-                <>
-                  <FormLine label="Immatriculation" value="___________" />
-                  <FormLine label="Marque" value="___________" />
-                  <FormLine label="Modèle" value="___________" />
-                  <FormLine label="Couleur" value="___________" />
-                  <FormLine label="Année" value="___________" />
-                  <FormLine label="Type de carburant" value="___________" />
-                  <FormLine label="Transmission" value="___________" />
-                  <FormLine label="Nombre de places" value="___________" />
-                  <FormLine label="Nombre de portes" value="___________" />
-                  <FormLine label="Livré par" value="___________" />
-                  <FormLine label="Réceptionné par" value="___________" />
-                </>
-              ) : (
-                <>
-                  <FormLine label="Immatriculation" value={formData.car_matricule || ""} />
-                  <FormLine label="Marque" value={formData.car_brand || ""} />
-                  <FormLine label="Modèle" value={formData.car_model || ""} />
-                  <FormLine label="Couleur" value={formData.car_color || ""} />
-                  <FormLine label="Année" value={formData.car_year || ""} />
-                  <FormLine label="Type de carburant" value={formData.car_fuel || ""} />
-                  <FormLine label="Transmission" value={formData.car_transmission || ""} />
-                  <FormLine label="Nombre de places" value={formData.car_seats || ""} />
-                  <FormLine label="Nombre de portes" value={formData.car_doors || ""} />
-                  <FormLine label="Livré par" value={currentUserName} />
-                  <FormLine label="Réceptionné par" value={currentUserName} />
-                </>
-              )}
-              
-              {getDisplayOption("rentalDates") !== "hide" && (
-                <>
-                  {getDisplayOption("rentalDates") === "dash" ? (
+              {/* DEUXIÈME CONDUCTEUR */}
+              <div className="contract-section">
+                <div className="section-title-print">DEUXIÈME CONDUCTEUR</div>
+                <div className="section-content">
+                  {getDisplayOption("secondDriver") === "hide" ? (
                     <>
-                      <FormLine label="Date de départ" value="___________" />
-                      <FormLine label="Heure" value="___________" />
-                      <FormLine label="Date de retour" value="___________" />
-                      <FormLine label="Heure" value="___________" />
+                      <div className="field-row"><span className="field-label">Nom :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Prénom :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Date naissance :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Lieu naissance :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">CIN :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Permis N° :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Adresse :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Téléphone :</span><span className="field-value"></span></div>
+                      <div className="field-row"><span className="field-label">Email :</span><span className="field-value"></span></div>
+                    </>
+                  ) : getDisplayOption("secondDriver") === "dash" ? (
+                    <>
+                      <div className="field-row"><span className="field-label">Nom :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Prénom :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Date naissance :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Lieu naissance :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">CIN :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Permis N° :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Adresse :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Téléphone :</span><span className="field-value">___________</span></div>
+                      <div className="field-row"><span className="field-label">Email :</span><span className="field-value">___________</span></div>
                     </>
                   ) : (
-                    <>
-                      <FormLine label="Date de départ" value={formatDate(formData.start_date)} />
-                      <FormLine label="Heure" value={formData.start_time || "08:00"} />
-                      <FormLine label="Date de retour" value={formatDate(formData.end_date)} />
-                      <FormLine label="Heure" value={formData.end_time || "18:00"} />
-                    </>
+                    hasSecondDriver ? (
+                      <>
+                        <div className="field-row"><span className="field-label">Nom :</span><span className="field-value">{formData.second_driver_nom || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Prénom :</span><span className="field-value">{formData.second_driver_prenom || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Date naissance :</span><span className="field-value">{formatDate(formData.second_driver_date_naissance) || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Lieu naissance :</span><span className="field-value">{formData.second_driver_lieu_naissance || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">CIN :</span><span className="field-value">{formData.second_driver_cin || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">{formatDate(formData.second_driver_cin_expiry) || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Permis N° :</span><span className="field-value">{formData.second_driver_permis || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">{formatDate(formData.second_driver_permis_expiry) || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Adresse :</span><span className="field-value">{formData.second_driver_address || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Téléphone :</span><span className="field-value">{formData.second_driver_phone || "—"}</span></div>
+                        <div className="field-row"><span className="field-label">Email :</span><span className="field-value">{formData.second_driver_email || "—"}</span></div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="field-row"><span className="field-label">Nom :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Prénom :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Date naissance :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Lieu naissance :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">CIN :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Permis N° :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Expire le :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Adresse :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Téléphone :</span><span className="field-value">—</span></div>
+                        <div className="field-row"><span className="field-label">Email :</span><span className="field-value">—</span></div>
+                      </>
+                    )
                   )}
-                </>
-              )}
+                </div>
+              </div>
+            </td>
 
-              {getDisplayOption("kilometrage") !== "hide" && (
-                <>
-                  {getDisplayOption("kilometrage") === "dash" ? (
-                    <>
-                      <FormLine label="Km départ" value="___________" />
-                      <FormLine label="Km retour" value="___________" />
-                    </>
-                  ) : (
-                    <>
-                      <FormLine label="Km départ" value={formData.kilometrage_depart || ""} />
-                      <FormLine label="Km retour" value={formData.kilometrage_retour || ""} />
-                    </>
-                  )}
-                </>
-              )}
+            <td className="contract-right-col">
+              {/* VÉHICULE */}
+              <div className="contract-section">
+                <div className="section-title-print">VÉHICULE</div>
+                <div className="section-content">
+                  <div className="field-row"><span className="field-label">Immatriculation :</span><span className="field-value matricule-code">{getDisplayValue(getDisplayOption("vehicleInfo"), formData.car_matricule || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Marque/Modèle :</span><span className="field-value">{getDisplayValue(getDisplayOption("vehicleInfo"), `${formData.car_brand || ""} ${formData.car_model || ""}`.trim() || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Couleur :</span><span className="field-value">{getDisplayValue(getDisplayOption("vehicleInfo"), formData.car_color || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Année :</span><span className="field-value">{getDisplayValue(getDisplayOption("vehicleInfo"), formData.car_year || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Carburant :</span><span className="field-value">{getDisplayValue(getDisplayOption("vehicleInfo"), formData.car_fuel || "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Transmission :</span><span className="field-value">{getDisplayValue(getDisplayOption("vehicleInfo"), formData.car_transmission || "—")}</span></div>
+                </div>
+              </div>
 
-              {getDisplayOption("rentalDays") !== "hide" && (
-                getDisplayOption("rentalDays") === "dash" ? (
-                  <FormLine label="Nombre de jours" value="___________" />
-                ) : (
-                  <FormLine label="Nombre de jours" value={calculateRentalDays()} />
-                )
-              )}
+              {/* LOCATION */}
+              <div className="contract-section">
+                <div className="section-title-print">LOCATION</div>
+                <div className="section-content">
+                  <div className="field-row"><span className="field-label">Départ :</span><span className="field-value">{getDisplayValue(getDisplayOption("rentalDates"), `${formatDate(formData.start_date)} à ${formData.start_time || "08:00"}`)}</span></div>
+                  <div className="field-row"><span className="field-label">Retour :</span><span className="field-value">{getDisplayValue(getDisplayOption("rentalDates"), `${formatDate(formData.end_date)} à ${formData.end_time || "18:00"}`)}</span></div>
+                  <div className="field-row"><span className="field-label">Durée :</span><span className="field-value">{getDisplayValue(getDisplayOption("rentalDays"), `${rentalDays} jours`)}</span></div>
+                  <div className="field-row"><span className="field-label">Km départ :</span><span className="field-value">{getDisplayValue(getDisplayOption("kilometrage"), `${formData.kilometrage_depart || "—"} km`)}</span></div>
+                  <div className="field-row"><span className="field-label">Km retour :</span><span className="field-value">{getDisplayValue(getDisplayOption("kilometrage"), formData.kilometrage_retour ? `${formData.kilometrage_retour} km` : "—")}</span></div>
+                  <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(getDisplayOption("deliveryReception"), currentUserName)}</span></div>
+                  <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(getDisplayOption("deliveryReception"), currentUserName)}</span></div>
+                </div>
+              </div>
 
-              {getDisplayOption("prices") !== "hide" && (
-                getDisplayOption("prices") === "dash" ? (
-                  <>
-                    <FormLine label="Prix unitaire" value="___________ DH" />
-                    <FormLine label="Montant T.T.C" value="___________ DH" />
-                    <FormLine label="Montant payé" value="___________ DH" />
-                    <FormLine label="Montant restant" value="___________ DH" />
-                  </>
-                ) : (
-                  <>
-                    <FormLine label="Prix unitaire" value={`${formData.price_per_day || ""} DH`} />
-                    <FormLine label="Montant T.T.C" value={`${formData.total_price || ""} DH`} />
-                    <FormLine label="Montant payé" value={`${formData.amount_paid || ""} DH`} />
-                    <FormLine label="Montant restant" value={`${(formData.total_price - formData.amount_paid) || ""} DH`} />
-                  </>
-                )
-              )}
+              {/* TARIFS */}
+              <div className="contract-section pricing-section">
+                <div className="section-title-print">TARIFS</div>
+                <div className="section-content">
+                  <div className="field-row"><span className="field-label">Prix journalier :</span><span className="field-value">{getDisplayValue(getDisplayOption("prices"), `${dailyPrice} DH`)}</span></div>
+                  <div className="field-row total-row"><span className="field-label">Total TTC :</span><span className="field-value total-amount">{getDisplayValue(getDisplayOption("prices"), `${formData.total_price || "—"} DH`)}</span></div>
+                  <div className="field-row"><span className="field-label">Montant payé :</span><span className="field-value">{getDisplayValue(getDisplayOption("prices"), `${formData.amount_paid || "0"} DH`)}</span></div>
+                  <div className="field-row"><span className="field-label">Reste à payer :</span><span className="field-value remaining-amount">{getDisplayValue(getDisplayOption("prices"), `${formData.total_price - formData.amount_paid || "0"} DH`)}</span></div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* CHECKLIST */}
+      <div className="contract-section checklist-section-print">
+        <div className="section-title-print">CHECKLIST - ÉTAT DU VÉHICULE</div>
+        <div className="checklist-content">
+          <table className="checklist-table" cellPadding="0" cellSpacing="0">
+            <tbody>
+              <tr>
+                <td className="checklist-cell">
+                  <div className="checklist-label">État de départ :</div>
+                  <CarDiagram />
+                </td>
+                <td className="checklist-cell">
+                  <div className="checklist-label">État de retour :</div>
+                  <CarDiagram />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="documents-row">
+            <span className="documents-label">Documents remis :</span>
+            <div className="documents-items">
+              <span className="doc-item"><CheckboxComponent checked={paperwork.carteGrise} /> Carte grise</span>
+              <span className="doc-item"><CheckboxComponent checked={paperwork.assurance} /> Assurance</span>
+              <span className="doc-item"><CheckboxComponent checked={paperwork.vignette} /> Vignette</span>
+              <span className="doc-item"><CheckboxComponent checked={paperwork.visiteTechnique} /> Visite technique</span>
+              <span className="doc-item"><CheckboxComponent checked={paperwork.autorisation} /> Autorisation</span>
             </div>
-          )}
-        </div>
-      </section>
-
-      <section className="checklist-section">
-        <h2 className="section-header-contract checklist-title">CHECK LIST Etat du Véhicule</h2>
-        <div className="etat-vehicule">
-          <div>
-            <div className="etat-label">Etat de Départ :</div>
-            <CarDiagram />
-          </div>
-          <div>
-            <div className="etat-label">Etat de Retour :</div>
-            <CarDiagram />
           </div>
         </div>
+      </div>
 
-        <div className="paperwork-bar">
-          <div className="paperwork-item">Papier de circulation :</div>
-          <div className="paperwork-item">Carte grise <CheckboxComponent checked={paperwork.carteGrise} /></div>
-          <div className="paperwork-item">Assurance <CheckboxComponent checked={paperwork.assurance} /></div>
-          <div className="paperwork-item">Vignette <CheckboxComponent checked={paperwork.vignette} /></div>
-          <div className="paperwork-item">Autorisation <CheckboxComponent checked={paperwork.autorisation} /></div>
-          <div className="paperwork-item">Visite technique <CheckboxComponent checked={paperwork.visiteTechnique} /></div>
+      {/* Clause kilométrage */}
+      <div className="kilometrage-clause-section">
+        <div className="kilometrage-clause-title">⚠️ IMPORTANT - CLAUSE DE DÉPASSEMENT DE KILOMÉTRAGE</div>
+        <div className="kilometrage-clause-text">
+          En cas de dépassement du kilométrage mentionné (200km par jour), vous allez payer 1.5 DH pour chaque kilomètre additionnel au-delà de la limite autorisée.
         </div>
-      </section>
+      </div>
 
-      <section className="observations-section">
-        <ObservationBox
-          title="Observation"
-          option={getDisplayOption("observations")}
-        >
+      {/* Observations et signatures */}
+      <div className="observations-row-print">
+        <ObservationBox title="Observations" option={getDisplayOption("observations")}>
           <div className="observation-text">
-            Véhicule loué en bon état général. Le client s'engage à retourner le véhicule dans le même état.
-            {formData.notes && ` Notes: ${formData.notes}`}
+            {getDisplayValue(getDisplayOption("observations"),
+              `Véhicule loué en bon état général. Le client s'engage à retourner le véhicule dans le même état.${formData.notes ? ` Notes: ${formData.notes}` : ""}`,
+              "___________",
+              ""
+            )}
           </div>
         </ObservationBox>
-        <ObservationBox
-          title="Assurance Supplémentaire"
-          option={getDisplayOption("insurance")}
-        >
-          <div className="observation-text">Assurance tous risques incluse. Franchise applicable en cas de sinistre.</div>
-        </ObservationBox>
-        <ObservationBox
-          title="Caution & Garantie"
-          isHalf
-          option={getDisplayOption("depositGuarantee")}
-        >
+        <ObservationBox title="Assurance" option={getDisplayOption("insurance")}>
           <div className="observation-text">
-            Caution: {formData.amount_paid ? `${formData.amount_paid} DH` : "_________"} DH<br/>
-            Montant restant: {formData.total_price - formData.amount_paid > 0 ? `${formData.total_price - formData.amount_paid} DH` : "_________"} DH
+            {getDisplayValue(getDisplayOption("insurance"),
+              "Assurance tous risques incluse. Franchise applicable en cas de sinistre.",
+              "___________",
+              ""
+            )}
           </div>
         </ObservationBox>
-      </section>
+        <ObservationBox title="Caution" isHalf option={getDisplayOption("depositGuarantee")}>
+          <div className="observation-text">
+            Caution: {getDisplayValue(getDisplayOption("depositGuarantee"), `${formData.amount_paid ? `${formData.amount_paid} DH` : "_________"} DH`, "_________", "")}
+          </div>
+        </ObservationBox>
+      </div>
 
-      <section className="signature-section">
-        <SignatureBlock
-          label="Signature Agent"
-          signature={signatures.agent}
-          option={getDisplayOption("signatures")}
-        />
-        <SignatureBlock
-          label="Signature du locataire"
-          signature={signatures.locataire}
-          option={getDisplayOption("signatures")}
-        />
-        <SignatureBlock
-          label="Deuxieme conducteur"
-          signature={signatures.secondConducteur}
-          option={getDisplayOption("signatures")}
-        />
-      </section>
+      <div className="signatures-row-print">
+        <SignatureBlock label="Signature de l'agent" signature={signatures.agent} option={getDisplayOption("signatures")} />
+        <SignatureBlock label="Signature du locataire" signature={signatures.locataire} option={getDisplayOption("signatures")} />
+        <SignatureBlock label="Signature 2ème conducteur" signature={signatures.secondConducteur} option={getDisplayOption("signatures")} />
+      </div>
 
-      <footer className="contract-footer">
-        SMAITI CAR SARL AU CAPITAL 100 000.00 DH SIEGE SOCIAL: BASSATINE AL OULFA GH 3 IMMEUBLE 14 N°56 AL OULFA – CASABLANCA<br />
-        RC : 459659 - IF : 45640901 - TP : 30351369 - ICE : 002464789000069 - CNSS : 2473901 -TEL: 0665 92 19 21 / 0660 47 28 40 - EMAIL: SMAITICAR2@GMAIL.COM
-      </footer>
+      {/* Pied de page */}
+      <div className="contract-footer-print">
+        <div className="footer-line">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+            <Building2 size={8} /> SMAITI CAR SARL - Capital 100 000 DH
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", marginLeft: "6px" }}>
+            <FileCheck size={8} /> RC : 459659 - IF : 45640901 - TP : 30351369 - ICE : 002464789000069 - CNSS : 2473901
+          </span>
+        </div>
+        <div className="footer-line">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+            <MapPin size={8} /> Bassatine Al Oulfa, Casablanca
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", marginLeft: "6px" }}>
+            <Phone size={8} /> 0665 92 19 21
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", marginLeft: "6px" }}>
+            <Mail size={8} /> smaiticar2@gmail.com
+          </span>
+        </div>
+      </div>
+
+      {/* Styles CSS identiques à ceux de ContractLocation */}
+      <style>{`
+        .contract-container-print {
+          max-width: 1100px;
+          margin: 0 auto;
+          background: white;
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          color: #1a2c3e;
+          line-height: 1.5;
+          padding: 0 6px;
+        }
+        .contract-header-table {
+          width: 100%;
+          border-bottom: 2px solid #d4af37;
+          margin-bottom: 10px;
+          padding-bottom: 6px;
+        }
+        .header-left { width: 30%; vertical-align: top; }
+        .header-center { width: 40%; text-align: center; vertical-align: middle; }
+        .header-right { width: 30%; text-align: right; vertical-align: top; }
+        .company-name { font-size: 20px; font-weight: 800; letter-spacing: 1.5px; color: #1e293b; }
+        .company-slogan { font-size: 10px; font-weight: 600; margin-top: 2px; color: #b8860b; }
+        .company-phone { font-size: 9px; margin-top: 4px; color: #475569; }
+        .contract-logo-print { height: 75px; width: auto; object-fit: contain; }
+        .contract-number-box { border: 1px solid #94a3b8; padding: 6px 12px; text-align: center; font-size: 10px; display: inline-block; background: #fefce8; border-radius: 8px; }
+        .arabic-text { margin-top: 6px; font-size: 12px; font-weight: 500; color: #475569; }
+        .contract-title-print {
+          text-align: center;
+          font-size: 17px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 2px;
+          margin-bottom: 10px;
+          border-bottom: 1px solid #94a3b8;
+          padding-bottom: 6px;
+          color: #0f172a;
+        }
+        .contract-content-table { width: 100%; }
+        .contract-left-col { width: 50%; vertical-align: top; padding-right: 12px; }
+        .contract-right-col { width: 50%; vertical-align: top; padding-left: 12px; }
+        .contract-section {
+          margin-bottom: 8px;
+          border: 1px solid #000000;
+          border-radius: 8px;
+          overflow: hidden;
+          background: white;
+        }
+        .section-title-print {
+          background: #cbd5e1;
+          padding: 6px 12px;
+          font-weight: 700;
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          border-bottom: 1px solid #000000;
+          color: #1e293b;
+        }
+        .checklist-section-print .checklist-table,
+        .checklist-section-print .doc-item,
+        .observation-box,
+        .signature-box,
+        .kilometrage-clause-section {
+          border-color: #000000 !important;
+        }
+        .checklist-section-print .section-title-print {
+          background: #cbd5e1 !important;
+        }
+        .obs-title {
+          background: #cbd5e1 !important;
+          border-bottom: 1px solid #000000;
+        }
+        .section-content { padding: 8px 12px; }
+        .field-row {
+          display: flex;
+          margin-bottom: 4px;
+          font-size: 10px;
+          align-items: baseline;
+        }
+        .field-label {
+          width: 100px;
+          font-weight: 600;
+          color: #475569;
+          flex-shrink: 0;
+        }
+        .field-value {
+          flex: 1;
+          border-bottom: 1px dotted #cbd5e1;
+          padding-left: 4px;
+          color: #0f172a;
+        }
+        .matricule-code { font-family: 'Courier New', monospace; font-weight: 700; color: #b8860b; letter-spacing: 0.5px; }
+        .total-row .total-amount { font-weight: 800; font-size: 12px; color: #b8860b; }
+        .remaining-amount { font-weight: 700; color: #dc2626; }
+        .pricing-section { border-left: 4px solid #d4af37; }
+        .checklist-section-print { margin: 8px 0; }
+        .checklist-table { width: 100%; margin-bottom: 8px; }
+        .checklist-cell { width: 50%; text-align: center; vertical-align: top; padding: 0 6px; }
+        .checklist-label { font-weight: 700; margin-bottom: 4px; font-size: 10px; color: #334155; }
+        .documents-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          padding: 8px 12px;
+          background: #f9fafb;
+          border-radius: 8px;
+          margin-top: 6px;
+          gap: 10px;
+        }
+        .documents-label { font-weight: 700; margin-right: 4px; font-size: 10px; color: #334155; }
+        .documents-items { display: flex; flex-wrap: wrap; gap: 10px; }
+        .doc-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 9px;
+          background: white;
+          padding: 3px 8px;
+          border-radius: 12px;
+          border: 1px solid #94a3b8;
+        }
+        .checkbox-square {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 13px;
+          height: 13px;
+          border: 1.5px solid #334155;
+          background: white;
+          font-size: 9px;
+          font-weight: bold;
+          margin-right: 2px;
+          border-radius: 2px;
+        }
+        .checkbox-square.checked { background: #d4af37 !important; border-color: #d4af37 !important; color: #0f172a !important; }
+        .car-diagram-container img {
+          width: 100%;
+          max-width: 130px;
+          height: auto;
+          border: 1px solid #94a3b8;
+          border-radius: 6px;
+          background: #fafafa;
+          padding: 4px;
+        }
+        .kilometrage-clause-section {
+          margin: 10px 0;
+          padding: 10px 16px;
+          border: 2px solid #eab308;
+          border-radius: 10px;
+          background: #fefce8;
+          box-shadow: 0 1px 4px rgba(234, 179, 8, 0.15);
+        }
+        .kilometrage-clause-title {
+          font-size: 11px;
+          font-weight: 800;
+          color: #92400e;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 6px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .kilometrage-clause-text {
+          font-size: 10.5px;
+          color: #1a2c3e;
+          line-height: 1.5;
+          font-weight: 500;
+        }
+        .observations-row-print { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; }
+        .observation-box {
+          flex: 1;
+          border: 1px solid #94a3b8;
+          border-radius: 10px;
+          overflow: hidden;
+          background: white;
+        }
+        .observation-box.half-width { flex: 0 0 calc(33.33% - 8px); }
+        .obs-title {
+          display: block;
+          padding: 6px 12px;
+          background: #f8fafc;
+          font-weight: 700;
+          font-size: 10px;
+          border-bottom: 1px solid #94a3b8;
+          color: #1e293b;
+        }
+        .observation-content {
+          padding: 8px 12px;
+          font-size: 9.5px;
+          min-height: 50px;
+          color: #334155;
+        }
+        .signatures-row-print { display: flex; gap: 20px; margin: 10px 0; }
+        .signature-block { flex: 1; text-align: center; }
+        .signature-label { font-size: 9px; font-weight: 700; margin-bottom: 6px; color: #475569; }
+        .signature-box {
+          border: 1px solid #94a3b8;
+          height: 50px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #fafafa;
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        .signature-box img {
+          max-height: 45px;
+          max-width: 90%;
+          object-fit: contain;
+        }
+        .signature-text {
+          font-size: 9px;
+          font-style: italic;
+          color: #64748b;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 100%;
+        }
+        .contract-footer-print {
+          margin-top: 8px;
+          padding-top: 6px;
+          border-top: 1px solid #d4af37;
+          text-align: center;
+          font-size: 8px;
+          color: #64748b;
+        }
+        .footer-line { margin-bottom: 2px; line-height: 1.3; }
+        .contract-number-box.stylish {
+          border: none;
+          background: #fefce857;
+          border-radius: 10px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+          padding: 4px 14px;
+        }
+        .contract-number-box.stylish .contract-number-label { font-size: 9px; color: #92400e; letter-spacing: 1px; }
+        .contract-number-box.stylish .contract-number-value { font-size: 20px; font-weight: 800; color: #1a1a2e; }
+        @media print {
+          .contract-container-print { margin: 0; padding: 0; background: white; }
+          .checkbox-square.checked { background: black !important; border-color: black !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .section-title-print { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .documents-row { background: #f9f9f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .contract-number-box.stylish { background: #fefce8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .kilometrage-clause-section { background: #fefce8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+        .contract-container-print .field-value { font-weight: 600; }
+        .contract-container-print .observation-content { font-weight: 500; }
+        .contract-container-print .kilometrage-clause-text { font-weight: 600; }
+      `}</style>
     </div>
   );
 };
@@ -2571,7 +3044,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, color, onClick, clickabl
   </div>
 );
 
-// ==================== Composant MatriculeCategoryCard (version améliorée) ====================
+// ==================== Composant MatriculeCategoryCard (version complète) ====================
 const MatriculeCategoryCard = ({
   title,
   icon: Icon,
@@ -2586,7 +3059,8 @@ const MatriculeCategoryCard = ({
   onToggleExpand,
   loading,
   badge,
-  onComplete
+  onComplete,
+  onToggleExtend, // NOUVEAU : pour activer la prolongation
 }) => {
   const [isExpanded, setIsExpanded] = useState(expanded || false);
   const [showAll, setShowAll] = useState(false);
@@ -2638,16 +3112,16 @@ const MatriculeCategoryCard = ({
   const isPendingCard = title === 'En attente de confirmation';
   const isRetourImminent = title === 'Retour imminent';
 
-  const getDaysLeft = (endDate) => {
-    if (!endDate) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const end = new Date(endDate);
-    end.setHours(0, 0, 0, 0);
-    const diffTime = end - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
+ const getDaysLeft = (endDate) => {
+  if (!endDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  const diffTime = end - today;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays; // peut être négatif, on gère dans l'affichage
+};
 
   // Fonction PDF (inchangée)
   const downloadPDF = () => {
@@ -2824,8 +3298,14 @@ const MatriculeCategoryCard = ({
                     daysLeft = getDaysLeft(mat.currentReservation.end_date);
                   }
 
+                  const reservation = mat.currentReservation;
+                  const canExtend = reservation?.can_extend_days;
+
                   return (
-                    <div key={mat.id} className="dropdown-item">
+                    <div
+                      key={mat.id}
+                      className={`dropdown-item ${canExtend ? 'extendable' : ''}`}
+                    >
                       <div className="item-info">
                         <span className="item-code">{mat.matricule_code}</span>
                         <span className="item-car">{mat.car?.brand} {mat.car?.model}</span>
@@ -2841,18 +3321,21 @@ const MatriculeCategoryCard = ({
                           </span>
                         )}
                         {isRetourImminent && daysLeft !== null && (
-                          <span className="days-left-badge" style={{
-                            background: daysLeft <= 1 ? '#fef2f2' : '#fef3c7',
-                            color: daysLeft <= 1 ? '#dc2626' : '#d97706',
-                            padding: '0.1rem 0.6rem',
-                            borderRadius: '1rem',
-                            fontSize: '0.65rem',
-                            fontWeight: 600,
-                            whiteSpace: 'nowrap'
-                          }}>
-                            {daysLeft === 0 ? 'Retour aujourd\'hui' : daysLeft === 1 ? '1 jour restant' : `${daysLeft} jours restants`}
-                          </span>
-                        )}
+  <span className="days-left-badge" style={{
+    background: daysLeft < 0 ? '#fee2e2' : daysLeft === 0 ? '#fef2f2' : '#fef3c7',
+    color: daysLeft < 0 ? '#dc2626' : daysLeft === 0 ? '#dc2626' : '#d97706',
+    padding: '0.1rem 0.6rem',
+    borderRadius: '1rem',
+    fontSize: '0.65rem',
+    fontWeight: 600,
+    whiteSpace: 'nowrap'
+  }}>
+    {daysLeft < 0 ? `Retard de ${Math.abs(daysLeft)} jour${Math.abs(daysLeft) > 1 ? 's' : ''}` :
+     daysLeft === 0 ? 'Retour aujourd\'hui' :
+     daysLeft === 1 ? '1 jour restant' :
+     `${daysLeft} jours restants`}
+  </span>
+)}
                       </div>
                       <div className="item-actions">
                         {title === 'Disponibles' && (
@@ -2902,15 +3385,36 @@ const MatriculeCategoryCard = ({
                         {(title === 'Retour imminent' || title === 'En retard') && 
                           onComplete && mat.currentReservation && 
                           (mat.currentReservation.status === 'confirmed' || mat.currentReservation.status === 'retard') && (
-                            <button
-                              className="btn-complete"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onComplete(mat.currentReservation);
-                              }}
-                            >
-                              <CheckCircle size={12} /> Terminer
-                            </button>
+                            <>
+                              {/* ===== BOUTON PROLONGATION ===== */}
+                              {isRetourImminent && reservation && (
+                                <>
+                                  {canExtend ? (
+                                    <span className="extend-badge"><CheckCircle size={12} /> Prolongation activée</span>
+                                  ) : (
+                                    <button
+                                      className="btn-extend"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onToggleExtend(reservation);
+                                      }}
+                                    >
+                                      Activer prolongation
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              {/* ============================== */}
+                              <button
+                                className="btn-complete"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onComplete(mat.currentReservation);
+                                }}
+                              >
+                                <CheckCircle size={12} /> Terminer
+                              </button>
+                            </>
                         )}
                         {title === 'En panne (Accident)' && (
                           <span className="return-badge">⛔ En réparation</span>
@@ -2941,7 +3445,11 @@ const MatriculeCategoryCard = ({
   );
 };
 // ==================== Component: ReserveModal ====================
+// ==================== Component: ReserveModal ====================
 const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) => {
+  const dispatch = useDispatch();
+  const sousLocations = useSelector(selectSousLocations);
+
   const [selectedClientId, setSelectedClientId] = useState('');
   const [clientSearch, setClientSearch] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0,10));
@@ -2950,22 +3458,63 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
   const [endTime, setEndTime] = useState('18:00');
   const [status, setStatus] = useState('pending');
   const [notes, setNotes] = useState('');
+
+  // --- Sous‑location states ---
+  const [sousLocationSearch, setSousLocationSearch] = useState('');
+  const [selectedSousLocationId, setSelectedSousLocationId] = useState('');
+  const [showSousDropdown, setShowSousDropdown] = useState(false);
+  const sousRef = useRef(null);
+
   const [submitting, setSubmitting] = useState(false);
 
+  // Fetch sous‑locations when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      dispatch(fetchSousLocations());
+    }
+  }, [isOpen, dispatch]);
+
+  // Click outside to close sous‑dropdown
+  useEffect(() => {
+    const handler = (e) => {
+      if (sousRef.current && !sousRef.current.contains(e.target)) {
+        setShowSousDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // ✅ Calcul du nombre de jours (rentalDays)
+  const rentalDays = useMemo(() => {
+    if (!startDate || !endDate) return 1;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    const diffTime = end - start;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays === 0 ? 1 : diffDays;
+  }, [startDate, endDate]);
+
+  // ✅ Calcul du prix total
   const totalPrice = useMemo(() => {
     if (!matricule || !startDate || !endDate) return 0;
     const car = cars.find(c => c.id === matricule.car_id);
     if (!car) return 0;
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-    return (car.price_per_day || 0) * days;
-  }, [matricule, startDate, endDate, cars]);
+    return (car.price_per_day || 0) * rentalDays;
+  }, [matricule, startDate, endDate, cars, rentalDays]);
 
   const filteredClients = clients.filter(c =>
     `${c.prenom} ${c.nom} ${c.telephone} ${c.email || ''}`
       .toLowerCase()
       .includes(clientSearch.toLowerCase())
+  );
+
+  // Filter sous‑locations based on search
+  const filteredSousLocations = sousLocations.filter(sl =>
+    sl.name.toLowerCase().includes(sousLocationSearch.toLowerCase()) ||
+    (sl.description && sl.description.toLowerCase().includes(sousLocationSearch.toLowerCase()))
   );
 
   if (!isOpen || !matricule) return null;
@@ -2988,7 +3537,9 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
       amount_paid: 0,
       remaining_amount: totalPrice,
       status: status,
-      notes: notes
+      notes: notes,
+      sous_location_id: selectedSousLocationId || null,
+      rental_days: rentalDays,   // ✅ AJOUTÉ
     };
     setSubmitting(true);
     try {
@@ -3001,6 +3552,9 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
     }
   };
 
+  // Get the selected sous‑location name for display
+  const selectedSousLocationName = sousLocations.find(sl => sl.id === selectedSousLocationId)?.name || '';
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: '500px' }} onClick={e => e.stopPropagation()}>
@@ -3009,6 +3563,7 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
           <button onClick={onClose} className="modal-close"><X size={20} /></button>
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.5rem' }}>
+          {/* Client search – unchanged */}
           <div className="form-group">
             <label>Client *</label>
             <input
@@ -3059,6 +3614,8 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
               </div>
             )}
           </div>
+
+          {/* Dates and times – unchanged */}
           <div className="form-group">
             <label>Date de début</label>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-control" required />
@@ -3079,6 +3636,8 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
             <label>Prix total estimé</label>
             <input type="text" className="form-control" value={`${totalPrice} DH`} disabled style={{ backgroundColor: '#f3f4f6' }} />
           </div>
+
+          {/* Statut */}
           <div className="form-group">
             <label>Statut</label>
             <select value={status} onChange={(e) => setStatus(e.target.value)} className="form-control">
@@ -3087,10 +3646,79 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
               <option value="contacted">Contacté</option>
             </select>
           </div>
+
+          {/* Sous‑location search – UNDER Statut */}
+          <div className="form-group" ref={sousRef}>
+            <label>Sous‑location (optionnel)</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Rechercher une sous‑location..."
+              value={sousLocationSearch}
+              onChange={(e) => {
+                setSousLocationSearch(e.target.value);
+                setShowSousDropdown(true);
+                if (!e.target.value) setSelectedSousLocationId('');
+              }}
+              onFocus={() => setShowSousDropdown(true)}
+            />
+            {showSousDropdown && (
+              <div style={{
+                maxHeight: '150px',
+                overflowY: 'auto',
+                border: '1px solid #e2e8f0',
+                borderRadius: '0.5rem',
+                marginTop: '0.25rem',
+                background: 'white',
+                position: 'relative',
+                zIndex: 10,
+              }}>
+                {filteredSousLocations.length === 0 ? (
+                  <div style={{ padding: '0.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
+                    {sousLocationSearch ? 'Aucune sous‑location trouvée' : 'Tapez pour rechercher'}
+                  </div>
+                ) : (
+                  filteredSousLocations.map(sl => (
+                    <div
+                      key={sl.id}
+                      style={{
+                        padding: '0.4rem 0.75rem',
+                        cursor: 'pointer',
+                        borderBottom: '1px solid #f1f5f9',
+                        background: selectedSousLocationId === sl.id ? '#fef3c7' : 'transparent',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                      }}
+                      onClick={() => {
+                        setSelectedSousLocationId(sl.id);
+                        setSousLocationSearch(sl.name);
+                        setShowSousDropdown(false);
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                      onMouseLeave={(e) => {
+                        if (selectedSousLocationId !== sl.id) e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      <span>{sl.name}</span>
+                      <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{sl.status}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+            {selectedSousLocationId && (
+              <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#16a34a' }}>
+                ✅ Sous‑location sélectionnée: {selectedSousLocationName}
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
           <div className="form-group">
             <label>Notes</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="form-control" rows="2"></textarea>
           </div>
+
           <div className="modal-footer" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
             <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn btn-primary" disabled={submitting}>
@@ -3102,7 +3730,7 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
     </div>
   );
 };
-
+// ==================== Component: DirectConfirmModal ====================
 // ==================== Component: DirectConfirmModal ====================
 const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) => {
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -3114,15 +3742,25 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // ✅ Calcul du nombre de jours (rentalDays)
+  const rentalDays = useMemo(() => {
+    if (!startDate || !endDate) return 1;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    const diffTime = end - start;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays === 0 ? 1 : diffDays;
+  }, [startDate, endDate]);
+
+  // ✅ Calcul du prix total
   const totalPrice = useMemo(() => {
     if (!matricule || !startDate || !endDate) return 0;
     const car = cars.find(c => c.id === matricule.car_id);
     if (!car) return 0;
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-    return (car.price_per_day || 0) * days;
-  }, [matricule, startDate, endDate, cars]);
+    return (car.price_per_day || 0) * rentalDays;
+  }, [matricule, startDate, endDate, cars, rentalDays]);
 
   const filteredClients = clients.filter(c =>
     `${c.prenom} ${c.nom} ${c.telephone} ${c.email || ''}`
@@ -3150,7 +3788,8 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
       amount_paid: 0,
       remaining_amount: totalPrice,
       status: 'confirmed',
-      notes: notes
+      notes: notes,
+      rental_days: rentalDays,   // ✅ AJOUTÉ
     };
     setSubmitting(true);
     try {
@@ -3449,13 +4088,15 @@ export default function AdminDashboard() {
   const [kilometrageRetour, setKilometrageRetour] = useState('');
   const [returnDate, setReturnDate] = useState('');
   const [returnTime, setReturnTime] = useState('');
-
+  const [completing, setCompleting] = useState(false);
+  const [originalRentalDays, setOriginalRentalDays] = useState(null);
   // Filter state
-  const [selectedMonth, setSelectedMonth] = useState('juin');
-  const [selectedYear, setSelectedYear] = useState('2026');
+  const [selectedMonth, setSelectedMonth] = useState('all');
+  const [selectedYear, setSelectedYear] = useState('all');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
 
   const monthOptions = [
+    { value: "all", label: "Tous" },
     { value: 'janvier', label: 'Janvier' },
     { value: 'février', label: 'Février' },
     { value: 'mars', label: 'Mars' },
@@ -3469,12 +4110,14 @@ export default function AdminDashboard() {
     { value: 'novembre', label: 'Novembre' },
     { value: 'décembre', label: 'Décembre' },
   ];
-  const yearOptions = [
-    { value: '2024', label: '2024' },
-    { value: '2025', label: '2025' },
-    { value: '2026', label: '2026' },
-    { value: '2027', label: '2027' },
-  ];
+  const currentYear = new Date().getFullYear();
+const yearOptions = useMemo(() => {
+  const years = [];
+  for (let y = currentYear - 5; y <= currentYear + 5; y++) {
+    years.push({ value: String(y), label: String(y) });
+  }
+  return [{ value: "all", label: "Tous" }, ...years];
+}, []);
   const periodOptions = [
     { value: 'all', label: 'Tous les jours' },
     { value: 'today', label: 'Aujourd\'hui' },
@@ -3484,43 +4127,50 @@ export default function AdminDashboard() {
 
   // Filtered reservations
   const filteredReservations = useMemo(() => {
-    let filtered = reservations;
-    const monthMap = {
-      janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
-      juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
-    };
-    if (selectedMonth && selectedYear) {
-      const monthNum = monthMap[selectedMonth.toLowerCase()];
-      if (monthNum !== undefined) {
-        filtered = filtered.filter(r => {
-          const d = new Date(r.start_date);
-          return d.getMonth() === monthNum && d.getFullYear() === parseInt(selectedYear);
-        });
-      }
-    }
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (selectedPeriod === 'today') {
+  let filtered = reservations;
+
+  const monthMap = {
+    janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+    juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
+  };
+
+  // Month & Year filters
+  if (selectedMonth !== "all" && selectedYear !== "all") {
+    const monthNum = monthMap[selectedMonth.toLowerCase()];
+    if (monthNum !== undefined) {
       filtered = filtered.filter(r => {
         const d = new Date(r.start_date);
-        return d >= today && d < new Date(today.getTime() + 86400000);
-      });
-    } else if (selectedPeriod === 'week') {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      filtered = filtered.filter(r => {
-        const d = new Date(r.start_date);
-        return d >= startOfWeek;
-      });
-    } else if (selectedPeriod === 'month') {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      filtered = filtered.filter(r => {
-        const d = new Date(r.start_date);
-        return d >= startOfMonth;
+        return d.getMonth() === monthNum && d.getFullYear() === parseInt(selectedYear);
       });
     }
-    return filtered;
-  }, [reservations, selectedMonth, selectedYear, selectedPeriod]);
+  } else if (selectedMonth !== "all") {
+    const monthNum = monthMap[selectedMonth.toLowerCase()];
+    if (monthNum !== undefined) {
+      filtered = filtered.filter(r => new Date(r.start_date).getMonth() === monthNum);
+    }
+  } else if (selectedYear !== "all") {
+    filtered = filtered.filter(r => new Date(r.start_date).getFullYear() === parseInt(selectedYear));
+  }
+
+  // Period filter
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (selectedPeriod === 'today') {
+    filtered = filtered.filter(r => {
+      const d = new Date(r.start_date);
+      return d >= today && d < new Date(today.getTime() + 86400000);
+    });
+  } else if (selectedPeriod === 'week') {
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    filtered = filtered.filter(r => new Date(r.start_date) >= startOfWeek);
+  } else if (selectedPeriod === 'month') {
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    filtered = filtered.filter(r => new Date(r.start_date) >= startOfMonth);
+  }
+
+  return filtered;
+}, [reservations, selectedMonth, selectedYear, selectedPeriod]);
 
   const totalReservations = filteredReservations.length;
   const reservationsEnAttente = filteredReservations.filter((r) => r.status === "pending").length;
@@ -3556,29 +4206,97 @@ export default function AdminDashboard() {
   }, [filteredReservations]);
 
   const filteredByMonth = useMemo(() => {
-    const months = {};
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      months[key] = {
-        month: d.toLocaleDateString("fr-FR", { month: "short" }),
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  // Map French month names to 0–11
+  const monthMap = {
+    janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+    juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
+  };
+
+  const filterYear = selectedYear !== "all" ? parseInt(selectedYear) : null;
+  const filterMonth = selectedMonth !== "all" ? monthMap[selectedMonth.toLowerCase()] : null;
+
+  // ─── DAILY VIEW (when a specific month is selected) ────────────────────────
+  if (filterMonth !== null) {
+    const targetYear = filterYear !== null ? filterYear : currentYear;
+    const daysInMonth = new Date(targetYear, filterMonth + 1, 0).getDate();
+    const dailyMap = {};
+
+    // Fill every day of the month
+    for (let d = 1; d <= daysInMonth; d++) {
+      dailyMap[d] = {
+        month: String(d),          // X‑axis labels: 1, 2, 3, …
         reservations: 0,
         revenue: 0,
       };
     }
+
+    // Count reservations that fall on each day (only for the selected month/year)
     filteredReservations.forEach((res) => {
       const d = new Date(res.start_date);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (months[key]) {
-        months[key].reservations += 1;
-        if (res.status === "confirmed" || res.status === "completed") {
-          months[key].revenue += Number(res.total_price || 0);
+      if (d.getMonth() === filterMonth && d.getFullYear() === targetYear) {
+        const dayNum = d.getDate();
+        if (dailyMap[dayNum]) {
+          dailyMap[dayNum].reservations += 1;
+          if (res.status === "confirmed" || res.status === "completed") {
+            dailyMap[dayNum].revenue += Number(res.total_price || 0);
+          }
         }
       }
     });
-    return Object.values(months);
-  }, [filteredReservations]);
+
+    return Object.values(dailyMap);
+  }
+
+  // ─── MONTHLY VIEW (when no specific month is selected) ─────────────────────
+  let startYear, startMonth, endYear, endMonth;
+
+  if (filterYear !== null) {
+    // Only a year selected → show all 12 months of that year
+    startYear = filterYear;
+    startMonth = 0;
+    endYear = filterYear;
+    endMonth = 11;
+  } else {
+    // No filter → last 6 months from today
+    startYear = currentYear;
+    startMonth = currentMonth - 5;
+    endYear = currentYear;
+    endMonth = currentMonth;
+    if (startMonth < 0) {
+      startMonth += 12;
+      startYear -= 1;
+    }
+  }
+
+  const months = {};
+  let d = new Date(startYear, startMonth, 1);
+  while (d.getFullYear() < endYear || (d.getFullYear() === endYear && d.getMonth() <= endMonth)) {
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    months[key] = {
+      month: d.toLocaleDateString("fr-FR", { month: "short" }), // e.g. "janv."
+      reservations: 0,
+      revenue: 0,
+    };
+    d.setMonth(d.getMonth() + 1);
+  }
+
+  filteredReservations.forEach((res) => {
+    const d = new Date(res.start_date);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (months[key]) {
+      months[key].reservations += 1;
+      if (res.status === "confirmed" || res.status === "completed") {
+        months[key].revenue += Number(res.total_price || 0);
+      }
+    }
+  });
+
+  return Object.values(months);
+}, [filteredReservations, selectedMonth, selectedYear, selectedPeriod]);
 
   const filteredTopCars = useMemo(() => {
     const carMap = {};
@@ -3735,76 +4453,199 @@ export default function AdminDashboard() {
   };
 
   // Manual Contract PDF generation
-  const generateManualContractPDF = async () => {
-    try {
-      const doc = new jsPDF("p", "mm", "a4");
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      
-      const contractElement = document.getElementById("manual-contract-print");
-      if (!contractElement) {
-        console.error("Contract element not found");
-        return;
-      }
+ // ==================== Génération du PDF du contrat manuel ====================
+const generateManualContractPDF = async () => {
+  try {
+    toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
 
-      const contractClone = contractElement.cloneNode(true);
-      contractClone.style.width = "210mm";
-      contractClone.style.height = "auto";
-      contractClone.style.padding = "10px";
-      contractClone.style.boxSizing = "border-box";
-
-      const tempContainer = document.createElement("div");
-      tempContainer.style.position = "fixed";
-      tempContainer.style.left = "-9999px";
-      tempContainer.style.top = "0";
-      tempContainer.style.width = "210mm";
-      tempContainer.style.height = "auto";
-      tempContainer.appendChild(contractClone);
-      document.body.appendChild(tempContainer);
-
-      const canvas = await html2canvas(contractClone, {
-        scale: 1.2,
-        useCORS: true,
-        allowTaint: true,
-        width: 794,
-        height: 1123,
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 794,
-        windowHeight: 1123
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      if (imgHeight > pageHeight) {
-        const scale = pageHeight / imgHeight;
-        const scaledWidth = imgWidth * scale;
-        const scaledHeight = imgHeight * scale;
-        doc.addImage(imgData, "PNG", (pageWidth - scaledWidth) / 2, 0, scaledWidth, scaledHeight);
-      } else {
-        const verticalOffset = (pageHeight - imgHeight) / 2;
-        doc.addImage(imgData, "PNG", 0, verticalOffset, imgWidth, imgHeight);
-      }
-      
-      document.body.removeChild(tempContainer);
-      
-      const pdfBlob = doc.output("blob");
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      window.open(pdfUrl, "_blank");
-      doc.save(`contrat-manuel-${new Date().toISOString().split("T")[0]}.pdf`);
-      
-      setTimeout(() => {
-        URL.revokeObjectURL(pdfUrl);
-      }, 1000);
-      
-      toast.success("Contrat généré avec succès!");
-    } catch (error) {
-      console.error("Error generating contract:", error);
-      toast.error("Erreur lors de la génération du contrat");
+    // Récupérer l'élément du contrat (caché)
+    const contractElement = document.getElementById("manual-contract-print");
+    if (!contractElement) {
+      toast.error("Élément du contrat non trouvé", { id: "contract-pdf" });
+      return;
     }
-  };
+
+    // Cloner le contrat pour modifications
+    const contractClone = contractElement.cloneNode(true);
+
+    // ---- Ajustements pour réduire la taille et tenir sur une page A4 ----
+    contractClone.style.width = "180mm";          // Réduction de la largeur
+    contractClone.style.height = "auto";
+    contractClone.style.padding = "6px";
+    contractClone.style.margin = "0";
+    contractClone.style.boxSizing = "border-box";
+    contractClone.style.backgroundColor = "white";
+    contractClone.style.fontSize = "9px";
+    contractClone.style.lineHeight = "1.3";
+
+    // Réduction des marges des sections
+    contractClone.querySelectorAll('.contract-section').forEach(s => {
+      s.style.marginBottom = "3px";
+      const content = s.querySelector('.section-content');
+      if (content) content.style.padding = "3px 6px";
+    });
+
+    // Réduction des titres de section
+    contractClone.querySelectorAll('.section-title-print').forEach(t => {
+      t.style.padding = "3px 8px";
+      t.style.fontSize = "8px";
+    });
+
+    // Réduction des champs
+    contractClone.querySelectorAll('.field-row').forEach(row => {
+      row.style.fontSize = "8px";
+      row.style.marginBottom = "1px";
+    });
+    contractClone.querySelectorAll('.field-label').forEach(label => {
+      label.style.width = "70px";
+      label.style.fontSize = "8px";
+    });
+
+    // Logo et en-tête plus petits
+    const logo = contractClone.querySelector('.contract-logo-print');
+    if (logo) logo.style.height = "45px";
+    const companyName = contractClone.querySelector('.company-name');
+    if (companyName) companyName.style.fontSize = "15px";
+    const companySlogan = contractClone.querySelector('.company-slogan');
+    if (companySlogan) companySlogan.style.fontSize = "7px";
+    const companyPhone = contractClone.querySelector('.company-phone');
+    if (companyPhone) companyPhone.style.fontSize = "7px";
+    const contractTitle = contractClone.querySelector('.contract-title-print');
+    if (contractTitle) {
+      contractTitle.style.fontSize = "13px";
+      contractTitle.style.marginBottom = "4px";
+      contractTitle.style.paddingBottom = "3px";
+    }
+
+    // Réduction des blocs de signature
+    contractClone.querySelectorAll('.signature-box').forEach(box => {
+      box.style.height = "30px";
+    });
+    contractClone.querySelectorAll('.signature-label').forEach(label => {
+      label.style.fontSize = "7px";
+      label.style.marginBottom = "2px";
+    });
+
+    // Observations
+    contractClone.querySelectorAll('.observation-box').forEach(box => {
+      const content = box.querySelector('.observation-content');
+      if (content) {
+        content.style.padding = "3px 6px";
+        content.style.fontSize = "7px";
+        content.style.minHeight = "20px";
+      }
+      const title = box.querySelector('.obs-title');
+      if (title) {
+        title.style.padding = "3px 8px";
+        title.style.fontSize = "7px";
+      }
+    });
+
+    // Clause kilométrage
+    const clause = contractClone.querySelector('.kilometrage-clause-section');
+    if (clause) {
+      clause.style.padding = "4px 10px";
+      clause.style.margin = "4px 0";
+      const title = clause.querySelector('.kilometrage-clause-title');
+      if (title) title.style.fontSize = "8px";
+      const text = clause.querySelector('.kilometrage-clause-text');
+      if (text) text.style.fontSize = "7px";
+    }
+
+    // Pied de page
+    const footer = contractClone.querySelector('.contract-footer-print');
+    if (footer) {
+      footer.style.fontSize = "6px";
+      footer.style.paddingTop = "3px";
+      footer.style.marginTop = "3px";
+    }
+
+    // Documents
+    contractClone.querySelectorAll('.doc-item').forEach(item => {
+      item.style.fontSize = "7px";
+      item.style.padding = "2px 5px";
+    });
+    const docsRow = contractClone.querySelector('.documents-row');
+    if (docsRow) {
+      docsRow.style.padding = "3px 6px";
+      docsRow.style.gap = "4px";
+    }
+
+    // Numéro de contrat
+    const numBox = contractClone.querySelector('.contract-number-box');
+    if (numBox) {
+      numBox.style.padding = "2px 6px";
+      const value = numBox.querySelector('.contract-number-value');
+      if (value) value.style.fontSize = "15px";
+      const label = numBox.querySelector('.contract-number-label');
+      if (label) label.style.fontSize = "6px";
+    }
+
+    // ---- Préparation du canvas ----
+    const tempContainer = document.createElement("div");
+    tempContainer.style.position = "fixed";
+    tempContainer.style.left = "-9999px";
+    tempContainer.style.top = "0";
+    tempContainer.style.width = "180mm";
+    tempContainer.style.height = "auto";
+    tempContainer.style.background = "white";
+    tempContainer.appendChild(contractClone);
+    document.body.appendChild(tempContainer);
+
+    // Attendre le chargement des images
+    const images = contractClone.querySelectorAll("img");
+    await Promise.all(Array.from(images).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+    }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Capturer
+    const canvas = await html2canvas(contractClone, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: "#ffffff",
+      width: contractClone.scrollWidth,
+      height: contractClone.scrollHeight,
+      windowWidth: contractClone.scrollWidth,
+      windowHeight: contractClone.scrollHeight
+    });
+
+    document.body.removeChild(tempContainer);
+
+    // ---- Génération du PDF ----
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    const imgData = canvas.toDataURL('image/png');
+    // On réduit la largeur de l'image pour laisser des marges
+    const imgWidth = pageWidth - 16; // 8mm de chaque côté
+    let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    // Si l'image est trop haute, on la redimensionne pour tenir dans la page
+    if (imgHeight > pageHeight - 16) {
+      const scale = (pageHeight - 16) / imgHeight;
+      imgHeight = pageHeight - 16;
+      // On ajuste la largeur en conséquence pour garder les proportions
+      // mais on laisse la largeur constante (on peut aussi recalculer)
+    }
+
+    // Centrage vertical
+    const xOffset = (pageWidth - imgWidth) / 2;
+    const yOffset = (pageHeight - imgHeight) / 2;
+
+    doc.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
+
+    const filename = `contrat-manuel-${new Date().toISOString().split("T")[0]}.pdf`;
+    downloadAndOpenPDF(doc, filename);
+    toast.success("Contrat généré avec succès!", { id: "contract-pdf" });
+  } catch (error) {
+    console.error("Erreur de génération du contrat:", error);
+    toast.error("Erreur lors de la génération du contrat", { id: "contract-pdf" });
+  }
+};
 
   const handleDisplayOptionChange = (section, value) => {
     setContractDisplayOptions(prev => ({ ...prev, [section]: value }));
@@ -3977,54 +4818,59 @@ export default function AdminDashboard() {
   };
 
   const handleDirectConfirmReservation = async (data) => {
-    setReserving(true);
-    try {
-      const result = await dispatch(createReservation(data)).unwrap();
-      const reservation = result.reservation || result.data || result;
-      toast.success('Réservation confirmée avec succès');
-      dispatch(refreshMatricules());
-      dispatch(fetchReservations(true));
-      setConfirmDirectModalOpen(false);
-      navigate('/reservations', { state: { contractReservation: reservation } });
-    } catch (error) {
-      toast.error('Erreur lors de la création de la réservation');
-      console.error(error);
-    } finally {
-      setReserving(false);
-    }
-  };
+  setReserving(true);
+  try {
+    const result = await dispatch(createReservation(data)).unwrap();
+    const reservation = result.reservation || result.data || result;
+    toast.success('Réservation confirmée avec succès');
+    dispatch(refreshMatricules());
+    dispatch(fetchReservations(true));
+    setConfirmDirectModalOpen(false);
+    navigate('/reservations', { state: { contractReservation: reservation } });
+  } catch (error) {
+    toast.error('Erreur lors de la création de la réservation');
+    console.error(error);
+  } finally {
+    setReserving(false);
+  }
+};
 
   const handleConfirmPending = async (reservation) => {
-    try {
-      const result = await dispatch(updateReservation({
-        id: reservation.id,
-        data: { status: 'confirmed' }
-      })).unwrap();
-      toast.success(`Réservation #${reservation.id} confirmée`);
-      dispatch(refreshMatricules());
-      dispatch(fetchReservations(true));
-      navigate('/reservations', { state: { contractReservation: result.reservation || result } });
-    } catch (error) {
-      toast.error('Erreur lors de la confirmation');
-      console.error(error);
-    }
-  };
+  try {
+    const now = new Date();
+    const result = await dispatch(updateReservation({
+      id: reservation.id,
+      data: {
+        status: 'confirmed',
+        start_time: now.toTimeString().slice(0, 5),   // heure actuelle
+        total_price: reservation.total_price,         // on renvoie le prix
+      }
+    })).unwrap();
+    toast.success(`Réservation #${reservation.id} confirmée`);
+    dispatch(refreshMatricules());
+    dispatch(fetchReservations(true));
+    navigate('/reservations', { state: { contractReservation: result.reservation || result } });
+  } catch (error) {
+    toast.error('Erreur lors de la confirmation');
+    console.error(error);
+  }
+};
 
   const handleConfirmReservation = async (data) => {
-    try {
-      setReserving(true);
-      const result = await dispatch(createReservation(data)).unwrap();
-      toast.success('Réservation créée avec succès (en attente)');
-      dispatch(refreshMatricules());
-      dispatch(fetchReservations(true));
-      setReserveModalOpen(false);
-    } catch (error) {
-      toast.error('Erreur lors de la création de la réservation');
-      console.error(error);
-    } finally {
-      setReserving(false);
-    }
-  };
+  try {
+    setReserving(true);
+    const result = await dispatch(createReservation(data)).unwrap();
+    toast.success('Réservation créée avec succès (en attente)');
+    dispatch(refreshMatricules());
+    dispatch(fetchReservations(true));
+    setReserveModalOpen(false);
+  } catch (error) {
+    toast.error('Erreur lors de la création de la réservation');
+    console.error(error);
+  } finally {
+    setReserving(false);
+  }
+};
 
   const handleCancelPending = async (reservation) => {
     try {
@@ -4040,44 +4886,62 @@ export default function AdminDashboard() {
       console.error(error);
     }
   };
-
+const handleToggleExtend = async (reservation) => {
+  try {
+    await dispatch(updateReservation({
+      id: reservation.id,
+      data: { can_extend_days: true }
+    })).unwrap();
+    toast.success(`Prolongation activée pour la réservation #${reservation.id}`);
+    // Rafraîchir les données pour mettre à jour l'affichage
+    dispatch(refreshMatricules());
+    dispatch(fetchReservations(true));
+  } catch (error) {
+    toast.error(error.message || "Erreur lors de l'activation");
+  }
+};
   // === Fonctions pour la terminaison ===
   const handleComplete = (reservation) => {
-    setCompleteReservationId(reservation.id);
-    const kmRetour = reservation.kilometrage_entree || reservation.matricule?.kilometrage || '';
-    setKilometrageRetour(kmRetour);
-    setReturnDate(reservation.end_date ? reservation.end_date.split('T')[0] : '');
-    setReturnTime(reservation.end_time || '18:00');
-    setCompleteModalOpen(true);
-  };
+  setCompleteReservationId(reservation.id);
+  setOriginalRentalDays(reservation.rental_days); // 👈 sauvegarde des jours d'origine
+  const kmRetour = reservation.kilometrage_entree || reservation.matricule?.kilometrage || '';
+  setKilometrageRetour(kmRetour);
+  const now = new Date();
+  setReturnDate(now.toISOString().split('T')[0]);
+  setReturnTime(now.toTimeString().slice(0, 5));
+  setCompleteModalOpen(true);
+};
 
   const confirmComplete = async () => {
-    if (!kilometrageRetour || isNaN(kilometrageRetour) || parseFloat(kilometrageRetour) < 0) {
-      toast.error("Veuillez entrer un kilométrage retour valide.");
-      return;
-    }
-    try {
-      await dispatch(updateReservation({
-        id: completeReservationId,
-        data: {
-          status: 'completed',
-          end_date: returnDate,
-          end_time: returnTime,
-          kilometrage_entree: parseFloat(kilometrageRetour)
-        }
-      })).unwrap();
-      toast.success("Réservation terminée avec succès !");
-      await dispatch(fetchReservations(true));
-      await dispatch(refreshMatricules(true));
-      setCompleteModalOpen(false);
-      setCompleteReservationId(null);
-      setKilometrageRetour('');
-      setReturnDate('');
-      setReturnTime('');
-    } catch (error) {
-      toast.error(error.message || "Erreur lors de la terminaison");
-    }
-  };
+  if (!kilometrageRetour || isNaN(kilometrageRetour) || parseFloat(kilometrageRetour) < 0) {
+    toast.error("Veuillez entrer un kilométrage retour valide.");
+    return;
+  }
+  setCompleting(true);
+  try {
+    await dispatch(updateReservation({
+      id: completeReservationId,
+      data: {
+        status: 'completed',
+        end_date: returnDate,
+        end_time: returnTime,
+        kilometrage_entree: parseFloat(kilometrageRetour),
+        rental_days: originalRentalDays, // 👈 envoi des jours d'origine
+      }
+    })).unwrap();
+    toast.success("Réservation terminée avec succès !");
+  } catch (error) {
+    toast.error(error.message || "Erreur lors de la terminaison");
+  } finally {
+    setCompleting(false);
+    setCompleteModalOpen(false);
+    setCompleteReservationId(null);
+    setOriginalRentalDays(null);
+    setKilometrageRetour('');
+    setReturnDate('');
+    setReturnTime('');
+  }
+};
 
   if (carsLoading || reservationsLoading) {
     return (
@@ -5622,6 +6486,72 @@ export default function AdminDashboard() {
           .filter-toolbar .calendar-icon { color: #94a3b8; }
           .today-filter-btn.active { background: #eab308; color: #0f172a; }
         }
+          /* Bouton Activer prolongation */
+.btn-extend {
+  background: #22c55e;
+  border: none;
+  color: white;
+  padding: 0.15rem 0.6rem;
+  border-radius: 1rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.btn-extend:hover {
+  background: #16a34a;
+  transform: scale(1.05);
+}
+
+/* Fond jaune pour les prolongations activées */
+.dropdown-item.extendable {
+  background-color: #fef3c7 !important;   /* jaune clair */
+  border-left: 4px solid #f59e0b;         /* bordure orange */
+}
+.dropdown-item.extendable:hover {
+  background-color: #fde68a !important;   /* jaune plus soutenu au survol */
+}
+  /* Badge "Prolongation" (quand déjà activée) */
+.extend-badge {
+  background: #15803d;
+  color: white;
+  padding: 0.1rem 0.6rem;
+  border-radius: 1rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  display: inline-block;
+  margin-left: 0.3rem;
+  white-space: nowrap;
+}
+
+/* Bouton "Activer prolongation" (quand non activée) */
+.btn-extend {
+  background: #f59e0b;    /* orange */
+  border: none;
+  color: white;
+  padding: 0.15rem 0.6rem;
+  border-radius: 1rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  margin-left: 0.3rem;
+}
+.btn-extend:hover {
+  background: #d97706;    /* orange plus foncé */
+  transform: scale(1.05);
+}
+
+/* Fond jaune pour les lignes avec prolongation activée */
+.dropdown-item.extendable {
+  background-color: #fef3c7 !important;
+  border-left: 4px solid #f59e0b;
+}
+.dropdown-item.extendable:hover {
+  background-color: #fde68a !important;
+}
       `}</style>
 
       <div className="dashboard">
@@ -5739,15 +6669,16 @@ export default function AdminDashboard() {
     badge={enAttenteWithRes.length}
   />
   <MatriculeCategoryCard
-    title="Retour imminent"
-    icon={CalendarClock}
-    color="green"
-    matricules={retourImminentWithRes}
-    expanded={expandedCategories.retourImminent}
-    onToggleExpand={() => toggleCategory('retourImminent')}
-    badge={retourImminentWithRes.length}
-    onComplete={handleComplete}
-  />
+  title="Retour imminent"
+  icon={CalendarClock}
+  color="green"
+  matricules={retourImminentWithRes}
+  expanded={expandedCategories.retourImminent}
+  onToggleExpand={() => toggleCategory('retourImminent')}
+  badge={retourImminentWithRes.length}
+  onComplete={handleComplete}
+  onToggleExtend={handleToggleExtend}   // <-- AJOUTER CETTE LIGNE
+/>
   <MatriculeCategoryCard
     title="En retard"
     icon={AlarmClock}
@@ -6018,16 +6949,20 @@ export default function AdminDashboard() {
         </div>
       </div>
       <div className="modal-actions-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-        <button onClick={() => setCompleteModalOpen(false)} className="btn btn-outline">
-          Annuler
-        </button>
+        <button onClick={() => {
+  setCompleteModalOpen(false);
+  setOriginalRentalDays(null);
+}} className="btn btn-outline">
+  Annuler
+</button>
         <button
-          onClick={confirmComplete}
-          className="btn btn-primary"
-          disabled={!kilometrageRetour || isNaN(kilometrageRetour) || parseFloat(kilometrageRetour) < 0}
-        >
-          <CheckCircle size={16} /> Terminer
-        </button>
+  onClick={confirmComplete}
+  className="btn btn-primary"
+  disabled={!kilometrageRetour || isNaN(kilometrageRetour) || parseFloat(kilometrageRetour) < 0 || completing}
+>
+  {completing ? <Loader size={16} className="spinning" /> : <CheckCircle size={16} />}
+  {completing ? "Traitement..." : "Terminer"}
+</button>
       </div>
     </div>
   </div>

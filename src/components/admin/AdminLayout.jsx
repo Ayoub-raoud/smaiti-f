@@ -18,6 +18,7 @@ import {
   Building2,
   Mail,
   UserCircle,
+  Tag 
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -36,7 +37,7 @@ import NotificationBell from "../../pages/admin/NotificationBell";
 
 // Default pages per role (no permission check required)
 const DEFAULT_PAGES = {
-  admin: ['cars', 'matricules', 'clients', 'reservations', 'accidents', 'contacts', 'users'],
+  admin: ['cars', 'matricules', 'clients', 'reservations', 'accidents', 'contacts', 'users','garages','sous-locations'],
   employee: ['cars', 'matricules', 'reservations', 'contacts'],
 };
 
@@ -122,6 +123,7 @@ export default function AdminLayout() {
     { path: "/reservations", icon: CalendarCheck, label: "Réservations", pageSlug: "reservations" },
     { path: "/reservations-status", icon: CalendarCheck, label: "Réservations (Statut)", pageSlug: "reservations" },
     { path: "/accidents", icon: AlertTriangle, label: "Accidents", pageSlug: "accidents" },
+    { path: "/sous-locations", icon: Tag, label: "Sous-locations", pageSlug: "sous-locations" },
     { path: "/payments", icon: CreditCard, label: "Traites", pageSlug: "payments" },
     { path: "/garages", icon: Building2, label: "Garages", pageSlug: "garages" },
     { path: "/contacts", icon: Mail, label: "Contacts", pageSlug: "contacts" },
