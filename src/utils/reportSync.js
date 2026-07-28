@@ -5,7 +5,7 @@ import autoTable from "jspdf-autotable";
 import logoImage from "../assets/logo.png";
 import { updateReservation } from "../Redux/store";
 
-const API_URL = "http://localhost:8000/api";
+const API_URL = "https://smaiti-b-production.up.railway.app/api";
 
 const blobToBase64 = (blob) =>
   new Promise((resolve, reject) => {
