@@ -120,6 +120,7 @@ export default function AdminLayout() {
     { path: "/cars", icon: Car, label: "Voitures", pageSlug: "cars" },
     { path: "/matricules", icon: Gauge, label: "Matricules", pageSlug: "matricules" },
     { path: "/clients", icon: Users, label: "Clients", pageSlug: "clients" },
+    { path: "/matricules-clients", icon: Users, label: "Clients par matricule", pageSlug: "matricules" },
     { path: "/reservations", icon: CalendarCheck, label: "Réservations", pageSlug: "reservations" },
     { path: "/reservations-status", icon: CalendarCheck, label: "Réservations (Statut)", pageSlug: "reservations" },
     { path: "/accidents", icon: AlertTriangle, label: "Accidents", pageSlug: "accidents" },
