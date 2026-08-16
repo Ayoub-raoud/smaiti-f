@@ -948,7 +948,7 @@ const SecondDriverSearch = ({ clients, selectedClientId, selectedSecondDriverId,
   );
 };
 
-// ==================== SousLocationSearch (copied from AdminReservations) ====================
+// ==================== SousLocationSearch ====================
 const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, canCreate = false }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -1230,8 +1230,14 @@ const ReservationForm = ({
     setFormData(prev => ({ ...prev, remaining_amount: remaining }));
   }, [formData.total_price, formData.amount_paid]);
 
-  // =============== NOUVEAU : Auto-remplir les heures selon le statut (HH:MM) ===============
+  // =============== MODIFICATION : Heures auto uniquement sur changement de statut (pas au premier rendu) ===============
+  const isFirstRender = useRef(true);
+
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     const now = new Date();
     const currentDate = now.toISOString().split('T')[0];
     const currentTime = now.toTimeString().slice(0, 5);
@@ -3001,7 +3007,8 @@ export default function AdminReservationsStatus() {
   )}
 </td>
                           <td className="text-right">
-                            <div className="action-buttons">
+                            {/* ===== MODIFICATION : Boutons en grille 4 colonnes ===== */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '4px', justifyContent: 'end' }}>
                               {r.status === "pending" || r.status === "contacted" ? (
                                 <>
                                   <button onClick={() => setStatus(r.id, "confirmed")} className="action-btn action-btn-success" title="Confirmer"><Check size={16} /></button>

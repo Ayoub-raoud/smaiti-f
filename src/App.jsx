@@ -15,6 +15,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminCars from './pages/admin/AdminCars';
 import AdminMatricules from './pages/admin/AdminMatricules';
+import AdminMatriculesClients from './pages/admin/AdminMatriculesClients';
 import AdminClients from './pages/admin/AdminClients';
 import AdminReservations from './pages/admin/AdminReservations';
 import AdminReservationsStatus from './pages/admin/AdminReservationsStatus';
@@ -49,6 +50,7 @@ const TitleUpdater = () => {
       '/users': 'Users Management',
       '/cars': 'Cars Management',
       '/matricules': 'Matricules Management',
+      '/matricules-clients': 'Clients par matricule',
       '/clients': 'Clients Management',
       '/reservations': 'Réservations',
       '/reservations-status': 'Réservations – Statut',
@@ -186,6 +188,14 @@ function App() {
             element={
               <ProtectedRoute pageSlug="matricules">
                 <AdminMatricules />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="matricules-clients"
+            element={
+              <ProtectedRoute pageSlug="matricules">
+                <AdminMatriculesClients />
               </ProtectedRoute>
             }
           />

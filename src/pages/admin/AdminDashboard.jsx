@@ -3,11 +3,11 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useDispatch, useSelector,useStore  } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import {
-  fetchCars, fetchReservations, fetchClients, fetchAccidents, fetchMatricules, fetchContacts, fetchUtilisateurs,
+  fetchCars, fetchReservations, createClient, fetchClients, fetchAccidents, fetchMatricules, fetchContacts, fetchUtilisateurs,
   selectCars, selectCarsLoading, selectReservations, selectReservationsLoading,
   selectClients, selectAccidents, selectMatricules, selectContacts, selectUtilisateurs, selectUser,
   createReservation, updateReservation, refreshMatricules,selectSousLocations ,fetchSousLocations ,
-  addPaymentToReservation, removePaymentFromReservation
+  addPaymentToReservation, removePaymentFromReservation,
 } from "../../Redux/store";
 import {
   Car, CalendarCheck, UserCircle, AlertTriangle, TrendingUp,
@@ -24,7 +24,7 @@ import {
   Mail as MailIcon, AlertTriangle as AlertIcon, CheckCircle as SuccessIcon,
   XCircle as ErrorIcon, Info as InfoIcon, Sparkles, Star, Activity, Upload,
   FolderOpen, Edit, Save as SaveIcon, Zap, Loader, ChevronLeft,
-  ChevronUp, Link2, Check,CalendarClock ,AlarmClock ,FileCheck  } from "lucide-react";
+  ChevronUp, Link2, Check,CalendarClock ,AlarmClock ,FileCheck ,CalendarPlus } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -3444,13 +3444,13 @@ const MatriculeCategoryCard = ({
     </div>
   );
 };
-// ==================== Component: ReserveModal ====================
-// ==================== Component: ReserveModal ====================
+// ==================== Component: ReserveModal (avec création de client) ====================
 const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) => {
   const dispatch = useDispatch();
   const sousLocations = useSelector(selectSousLocations);
 
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedClientName, setSelectedClientName] = useState('');
   const [clientSearch, setClientSearch] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0,10));
   const [endDate, setEndDate] = useState(new Date(Date.now()+7*24*60*60*1000).toISOString().slice(0,10));
@@ -3458,23 +3458,31 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
   const [endTime, setEndTime] = useState('18:00');
   const [status, setStatus] = useState('pending');
   const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  // --- Sous‑location states ---
   const [sousLocationSearch, setSousLocationSearch] = useState('');
   const [selectedSousLocationId, setSelectedSousLocationId] = useState('');
   const [showSousDropdown, setShowSousDropdown] = useState(false);
   const sousRef = useRef(null);
 
-  const [submitting, setSubmitting] = useState(false);
+  const [showCreateClientForm, setShowCreateClientForm] = useState(false);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientData, setNewClientData] = useState({
+    nom: '',
+    prenom: '',
+    telephone: '',
+    email: '',
+    city: '',
+    cin_number: '',
+    driver_license_number: '',
+  });
 
-  // Fetch sous‑locations when modal opens
   useEffect(() => {
     if (isOpen) {
       dispatch(fetchSousLocations());
     }
   }, [isOpen, dispatch]);
 
-  // Click outside to close sous‑dropdown
   useEffect(() => {
     const handler = (e) => {
       if (sousRef.current && !sousRef.current.contains(e.target)) {
@@ -3485,7 +3493,6 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ✅ Calcul du nombre de jours (rentalDays)
   const rentalDays = useMemo(() => {
     if (!startDate || !endDate) return 1;
     const start = new Date(startDate);
@@ -3497,7 +3504,6 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
     return diffDays === 0 ? 1 : diffDays;
   }, [startDate, endDate]);
 
-  // ✅ Calcul du prix total
   const totalPrice = useMemo(() => {
     if (!matricule || !startDate || !endDate) return 0;
     const car = cars.find(c => c.id === matricule.car_id);
@@ -3511,11 +3517,65 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
       .includes(clientSearch.toLowerCase())
   );
 
-  // Filter sous‑locations based on search
   const filteredSousLocations = sousLocations.filter(sl =>
     sl.name.toLowerCase().includes(sousLocationSearch.toLowerCase()) ||
     (sl.description && sl.description.toLowerCase().includes(sousLocationSearch.toLowerCase()))
   );
+
+  const handleCreateClient = async () => {
+    if (!newClientData.nom || !newClientData.prenom || !newClientData.telephone) {
+      toast.error('Veuillez remplir les champs obligatoires (Nom, Prénom, Téléphone)');
+      return;
+    }
+    setCreatingClient(true);
+    try {
+      const result = await dispatch(createClient(newClientData)).unwrap();
+      // Extraction robuste du client
+      const client = result?.data || result?.client || result;
+      const id = client.id || result.id;
+      const prenom = client.prenom || result.prenom || '';
+      const nom = client.nom || result.nom || '';
+      const fullName = `${prenom} ${nom}`.trim() || 'Nouveau client';
+      
+      setSelectedClientId(id);
+      setSelectedClientName(fullName);
+      setClientSearch(fullName);
+      setShowCreateClientForm(false);
+      setNewClientData({
+        nom: '',
+        prenom: '',
+        telephone: '',
+        email: '',
+        city: '',
+        cin_number: '',
+        driver_license_number: '',
+      });
+      // Rafraîchir la liste des clients
+      await dispatch(fetchClients());
+      toast.success(`Client "${fullName}" créé avec succès`);
+    } catch (error) {
+      let errorMsg = 'Erreur lors de la création du client';
+      if (error.response) {
+        const status = error.response.status;
+        const data = error.response.data;
+        if (status === 409) {
+          errorMsg = 'Un client avec ces informations existe déjà (téléphone, email ou CIN).';
+        } else if (data && data.message) {
+          errorMsg = data.message;
+        } else if (data && data.errors) {
+          const messages = Object.values(data.errors).flat().join(', ');
+          errorMsg = messages;
+        } else if (data && data.error) {
+          errorMsg = data.error;
+        }
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      toast.error(errorMsg);
+    } finally {
+      setCreatingClient(false);
+    }
+  };
 
   if (!isOpen || !matricule) return null;
 
@@ -3539,7 +3599,7 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
       status: status,
       notes: notes,
       sous_location_id: selectedSousLocationId || null,
-      rental_days: rentalDays,   // ✅ AJOUTÉ
+      rental_days: rentalDays,
     };
     setSubmitting(true);
     try {
@@ -3552,9 +3612,6 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
     }
   };
 
-  // Get the selected sous‑location name for display
-  const selectedSousLocationName = sousLocations.find(sl => sl.id === selectedSousLocationId)?.name || '';
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: '500px' }} onClick={e => e.stopPropagation()}>
@@ -3563,7 +3620,7 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
           <button onClick={onClose} className="modal-close"><X size={20} /></button>
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.5rem' }}>
-          {/* Client search – unchanged */}
+          {/* Client search */}
           <div className="form-group">
             <label>Client *</label>
             <input
@@ -3572,8 +3629,12 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
               placeholder="Rechercher un client..."
               value={clientSearch}
               onChange={(e) => {
-                setClientSearch(e.target.value);
-                if (!e.target.value) setSelectedClientId('');
+                const val = e.target.value;
+                setClientSearch(val);
+                if (!val) {
+                  setSelectedClientId('');
+                  setSelectedClientName('');
+                }
               }}
             />
             <div className="client-list-container" style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '0.5rem', marginTop: '0.25rem' }}>
@@ -3586,7 +3647,12 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
                   <div
                     key={c.id}
                     className={`client-list-item ${selectedClientId === c.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedClientId(c.id)}
+                    onClick={() => {
+                      setSelectedClientId(c.id);
+                      const fullName = `${c.prenom} ${c.nom}`;
+                      setSelectedClientName(fullName);
+                      setClientSearch(fullName);
+                    }}
                     style={{
                       padding: '0.5rem 0.75rem',
                       cursor: 'pointer',
@@ -3608,14 +3674,101 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
                 ))
               )}
             </div>
+
+            {/* Bouton "Créer un nouveau client" */}
+            <div style={{ marginTop: '0.5rem' }}>
+              {!showCreateClientForm ? (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => setShowCreateClientForm(true)}
+                >
+                  <Plus size={14} /> Créer un nouveau client
+                </button>
+              ) : (
+                <div style={{ padding: '0.5rem 0', border: '1px solid #e2e8f0', borderRadius: '0.5rem', background: '#f8fafc', padding: '0.75rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Nom *"
+                      value={newClientData.nom}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, nom: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Prénom *"
+                      value={newClientData.prenom}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, prenom: e.target.value }))}
+                    />
+                    <input
+                      type="tel"
+                      className="form-control"
+                      placeholder="Téléphone *"
+                      value={newClientData.telephone}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, telephone: e.target.value }))}
+                    />
+                    <input
+                      type="email"
+                      className="form-control"
+                      placeholder="Email (optionnel)"
+                      value={newClientData.email}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, email: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Ville (optionnel)"
+                      value={newClientData.city}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, city: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="CIN (optionnel)"
+                      value={newClientData.cin_number}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, cin_number: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Permis (optionnel)"
+                      value={newClientData.driver_license_number}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, driver_license_number: e.target.value }))}
+                      style={{ gridColumn: 'span 2' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => setShowCreateClientForm(false)}
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleCreateClient}
+                      disabled={creatingClient}
+                    >
+                      {creatingClient ? <Loader size={16} className="spinning" /> : 'Créer'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {selectedClientId && (
               <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#16a34a' }}>
-                ✅ Client sélectionné: {clients.find(c => c.id === selectedClientId)?.prenom} {clients.find(c => c.id === selectedClientId)?.nom}
+                ✅ Client sélectionné: {selectedClientName}
               </div>
             )}
           </div>
 
-          {/* Dates and times – unchanged */}
+          {/* Rest of form (dates, times, etc.) */}
           <div className="form-group">
             <label>Date de début</label>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-control" required />
@@ -3637,7 +3790,6 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
             <input type="text" className="form-control" value={`${totalPrice} DH`} disabled style={{ backgroundColor: '#f3f4f6' }} />
           </div>
 
-          {/* Statut */}
           <div className="form-group">
             <label>Statut</label>
             <select value={status} onChange={(e) => setStatus(e.target.value)} className="form-control">
@@ -3647,7 +3799,6 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
             </select>
           </div>
 
-          {/* Sous‑location search – UNDER Statut */}
           <div className="form-group" ref={sousRef}>
             <label>Sous‑location (optionnel)</label>
             <input
@@ -3708,12 +3859,11 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
             )}
             {selectedSousLocationId && (
               <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#16a34a' }}>
-                ✅ Sous‑location sélectionnée: {selectedSousLocationName}
+                ✅ Sous‑location sélectionnée: {sousLocations.find(sl => sl.id === selectedSousLocationId)?.name}
               </div>
             )}
           </div>
 
-          {/* Notes */}
           <div className="form-group">
             <label>Notes</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="form-control" rows="2"></textarea>
@@ -3730,10 +3880,12 @@ const ReserveModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) 
     </div>
   );
 };
-// ==================== Component: DirectConfirmModal ====================
-// ==================== Component: DirectConfirmModal ====================
+// ==================== Component: DirectConfirmModal (avec création de client) ====================
 const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfirm }) => {
+  const dispatch = useDispatch();
+
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedClientName, setSelectedClientName] = useState('');
   const [clientSearch, setClientSearch] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0,10));
   const [endDate, setEndDate] = useState(new Date(Date.now()+7*24*60*60*1000).toISOString().slice(0,10));
@@ -3742,7 +3894,18 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // ✅ Calcul du nombre de jours (rentalDays)
+  const [showCreateClientForm, setShowCreateClientForm] = useState(false);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientData, setNewClientData] = useState({
+    nom: '',
+    prenom: '',
+    telephone: '',
+    email: '',
+    city: '',
+    cin_number: '',
+    driver_license_number: '',
+  });
+
   const rentalDays = useMemo(() => {
     if (!startDate || !endDate) return 1;
     const start = new Date(startDate);
@@ -3754,7 +3917,6 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
     return diffDays === 0 ? 1 : diffDays;
   }, [startDate, endDate]);
 
-  // ✅ Calcul du prix total
   const totalPrice = useMemo(() => {
     if (!matricule || !startDate || !endDate) return 0;
     const car = cars.find(c => c.id === matricule.car_id);
@@ -3767,6 +3929,60 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
       .toLowerCase()
       .includes(clientSearch.toLowerCase())
   );
+
+  const handleCreateClient = async () => {
+    if (!newClientData.nom || !newClientData.prenom || !newClientData.telephone) {
+      toast.error('Veuillez remplir les champs obligatoires (Nom, Prénom, Téléphone)');
+      return;
+    }
+    setCreatingClient(true);
+    try {
+      const result = await dispatch(createClient(newClientData)).unwrap();
+      // Extraction robuste du client
+      const client = result?.data || result?.client || result;
+      const id = client.id || result.id;
+      const prenom = client.prenom || result.prenom || '';
+      const nom = client.nom || result.nom || '';
+      const fullName = `${prenom} ${nom}`.trim() || 'Nouveau client';
+      
+      setSelectedClientId(id);
+      setSelectedClientName(fullName);
+      setClientSearch(fullName);
+      setShowCreateClientForm(false);
+      setNewClientData({
+        nom: '',
+        prenom: '',
+        telephone: '',
+        email: '',
+        city: '',
+        cin_number: '',
+        driver_license_number: '',
+      });
+      await dispatch(fetchClients());
+      toast.success(`Client "${fullName}" créé avec succès`);
+    } catch (error) {
+      let errorMsg = 'Erreur lors de la création du client';
+      if (error.response) {
+        const status = error.response.status;
+        const data = error.response.data;
+        if (status === 409) {
+          errorMsg = 'Un client avec ces informations existe déjà (téléphone, email ou CIN).';
+        } else if (data && data.message) {
+          errorMsg = data.message;
+        } else if (data && data.errors) {
+          const messages = Object.values(data.errors).flat().join(', ');
+          errorMsg = messages;
+        } else if (data && data.error) {
+          errorMsg = data.error;
+        }
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      toast.error(errorMsg);
+    } finally {
+      setCreatingClient(false);
+    }
+  };
 
   if (!isOpen || !matricule) return null;
 
@@ -3789,7 +4005,7 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
       remaining_amount: totalPrice,
       status: 'confirmed',
       notes: notes,
-      rental_days: rentalDays,   // ✅ AJOUTÉ
+      rental_days: rentalDays,
     };
     setSubmitting(true);
     try {
@@ -3810,6 +4026,7 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
           <button onClick={onClose} className="modal-close"><X size={20} /></button>
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.5rem' }}>
+          {/* Client search */}
           <div className="form-group">
             <label>Client *</label>
             <input
@@ -3818,8 +4035,12 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
               placeholder="Rechercher un client..."
               value={clientSearch}
               onChange={(e) => {
-                setClientSearch(e.target.value);
-                if (!e.target.value) setSelectedClientId('');
+                const val = e.target.value;
+                setClientSearch(val);
+                if (!val) {
+                  setSelectedClientId('');
+                  setSelectedClientName('');
+                }
               }}
             />
             <div className="client-list-container" style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '0.5rem', marginTop: '0.25rem' }}>
@@ -3832,7 +4053,12 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
                   <div
                     key={c.id}
                     className={`client-list-item ${selectedClientId === c.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedClientId(c.id)}
+                    onClick={() => {
+                      setSelectedClientId(c.id);
+                      const fullName = `${c.prenom} ${c.nom}`;
+                      setSelectedClientName(fullName);
+                      setClientSearch(fullName);
+                    }}
                     style={{
                       padding: '0.5rem 0.75rem',
                       cursor: 'pointer',
@@ -3843,6 +4069,10 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
                       alignItems: 'center',
                       background: selectedClientId === c.id ? '#fef3c7' : 'transparent'
                     }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                    onMouseLeave={(e) => {
+                      if (selectedClientId !== c.id) e.currentTarget.style.background = 'transparent';
+                    }}
                   >
                     <span style={{ fontWeight: 500 }}>{c.prenom} {c.nom}</span>
                     <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{c.telephone}</span>
@@ -3850,12 +4080,100 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
                 ))
               )}
             </div>
+
+            {/* Bouton "Créer un nouveau client" */}
+            <div style={{ marginTop: '0.5rem' }}>
+              {!showCreateClientForm ? (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => setShowCreateClientForm(true)}
+                >
+                  <Plus size={14} /> Créer un nouveau client
+                </button>
+              ) : (
+                <div style={{ padding: '0.5rem 0', border: '1px solid #e2e8f0', borderRadius: '0.5rem', background: '#f8fafc', padding: '0.75rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Nom *"
+                      value={newClientData.nom}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, nom: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Prénom *"
+                      value={newClientData.prenom}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, prenom: e.target.value }))}
+                    />
+                    <input
+                      type="tel"
+                      className="form-control"
+                      placeholder="Téléphone *"
+                      value={newClientData.telephone}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, telephone: e.target.value }))}
+                    />
+                    <input
+                      type="email"
+                      className="form-control"
+                      placeholder="Email (optionnel)"
+                      value={newClientData.email}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, email: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Ville (optionnel)"
+                      value={newClientData.city}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, city: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="CIN (optionnel)"
+                      value={newClientData.cin_number}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, cin_number: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Permis (optionnel)"
+                      value={newClientData.driver_license_number}
+                      onChange={(e) => setNewClientData(prev => ({ ...prev, driver_license_number: e.target.value }))}
+                      style={{ gridColumn: 'span 2' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => setShowCreateClientForm(false)}
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleCreateClient}
+                      disabled={creatingClient}
+                    >
+                      {creatingClient ? <Loader size={16} className="spinning" /> : 'Créer'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {selectedClientId && (
               <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#16a34a' }}>
-                ✅ Client sélectionné: {clients.find(c => c.id === selectedClientId)?.prenom} {clients.find(c => c.id === selectedClientId)?.nom}
+                ✅ Client sélectionné: {selectedClientName}
               </div>
             )}
           </div>
+
           <div className="form-group">
             <label>Date de début</label>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-control" required />
@@ -3880,6 +4198,7 @@ const DirectConfirmModal = ({ isOpen, onClose, matricule, clients, cars, onConfi
             <label>Notes</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="form-control" rows="2"></textarea>
           </div>
+
           <div className="modal-footer" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
             <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn btn-primary" disabled={submitting}>
@@ -4084,6 +4403,11 @@ export default function AdminDashboard() {
 
   // === État pour le modal de terminaison ===
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
+  const [prolongationModal, setProlongationModal] = useState({
+  isOpen: false,
+  reservation: null,
+  days: 1,
+});
   const [completeReservationId, setCompleteReservationId] = useState(null);
   const [kilometrageRetour, setKilometrageRetour] = useState('');
   const [returnDate, setReturnDate] = useState('');
@@ -4886,19 +5210,12 @@ const generateManualContractPDF = async () => {
       console.error(error);
     }
   };
-const handleToggleExtend = async (reservation) => {
-  try {
-    await dispatch(updateReservation({
-      id: reservation.id,
-      data: { can_extend_days: true }
-    })).unwrap();
-    toast.success(`Prolongation activée pour la réservation #${reservation.id}`);
-    // Rafraîchir les données pour mettre à jour l'affichage
-    dispatch(refreshMatricules());
-    dispatch(fetchReservations(true));
-  } catch (error) {
-    toast.error(error.message || "Erreur lors de l'activation");
-  }
+const handleToggleExtend = (reservation) => {
+  setProlongationModal({
+    isOpen: true,
+    reservation,
+    days: 1,
+  });
 };
   // === Fonctions pour la terminaison ===
   const handleComplete = (reservation) => {
@@ -6963,6 +7280,93 @@ const handleToggleExtend = async (reservation) => {
   {completing ? <Loader size={16} className="spinning" /> : <CheckCircle size={16} />}
   {completing ? "Traitement..." : "Terminer"}
 </button>
+      </div>
+    </div>
+  </div>
+)}
+{/* ====== PROLONGATION MODAL ====== */}
+{prolongationModal.isOpen && (
+  <div className="modal-overlay" onClick={() => setProlongationModal({ isOpen: false, reservation: null, days: 1 })}>
+    <div className="modal" style={{ maxWidth: '400px' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-header">
+        <h2 className="modal-title">
+          <CalendarPlus size={20} style={{ color: '#eab308' }} /> Prolongation
+        </h2>
+        <button onClick={() => setProlongationModal({ isOpen: false, reservation: null, days: 1 })} className="modal-close">
+          <X size={20} />
+        </button>
+      </div>
+      <div className="modal-body" style={{ padding: '1.5rem' }}>
+        <p>Combien de jours souhaitez-vous ajouter ?</p>
+        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+  <label htmlFor="prolongation-days" style={{ fontWeight: 500, fontSize: '0.9rem', color: '#1e293b', whiteSpace: 'nowrap' }}>
+    Nombre de jours
+  </label>
+  <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+    <input
+      id="prolongation-days"
+      type="number"
+      className="styled-input"
+      value={prolongationModal.days}
+      onChange={(e) => setProlongationModal(prev => ({ ...prev, days: parseInt(e.target.value) || '' }))}
+      min="1"
+      style={{
+        width: '100%',
+        maxWidth: '120px',
+        padding: '0.5rem 0.75rem',
+        border: '1px solid #cbd5e1',
+        borderRadius: '0.5rem',
+        fontSize: '0.95rem',
+        background: 'white',
+        transition: 'border-color 0.2s, box-shadow 0.2s',
+        outline: 'none',
+        marginRight: '0.5rem',
+      }}
+      onFocus={(e) => {
+        e.target.style.borderColor = '#eab308';
+        e.target.style.boxShadow = '0 0 0 3px rgba(234, 179, 8, 0.15)';
+      }}
+      onBlur={(e) => {
+        e.target.style.borderColor = '#cbd5e1';
+        e.target.style.boxShadow = 'none';
+      }}
+    />
+    <span style={{ fontSize: '0.9rem', color: '#64748b' }}>jours</span>
+  </div>
+</div>
+      </div>
+      <div className="modal-actions-footer" style={{ padding: '1rem 1.5rem', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+        <button onClick={() => setProlongationModal({ isOpen: false, reservation: null, days: 1 })} className="btn btn-secondary">
+          Annuler
+        </button>
+        <button
+          onClick={async () => {
+            const { reservation, days } = prolongationModal;
+            if (!reservation || days < 1) {
+              toast.error('Veuillez entrer un nombre de jours valide.');
+              return;
+            }
+            try {
+              await dispatch(updateReservation({
+                id: reservation.id,
+                data: {
+                  can_extend_days: true,
+                  prolongation_days: days,
+                }
+              })).unwrap();
+              toast.success(`Prolongation de ${days} jour(s) ajoutée.`);
+              dispatch(refreshMatricules());
+              dispatch(fetchReservations(true));
+              navigate('/reservations', { state: { contractId: reservation.id } });
+            } catch (error) {
+              toast.error(error.message || 'Erreur lors de la prolongation.');
+            }
+            setProlongationModal({ isOpen: false, reservation: null, days: 1 });
+          }}
+          className="btn btn-primary"
+        >
+          <CheckCircle size={16} /> Confirmer
+        </button>
       </div>
     </div>
   </div>

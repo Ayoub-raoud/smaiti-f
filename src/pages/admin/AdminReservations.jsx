@@ -1,5 +1,5 @@
 // src/pages/admin/AdminReservations.jsx
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, Fragment } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import { useStore } from 'react-redux';
@@ -27,13 +27,49 @@ import {
   CreditCard as CreditCardIcon, CalendarRange, Fuel, Navigation, Upload,
   AlertTriangle, XCircle, Sparkles, Star, Heart, Award, Gem, Tag,Home,Coins,
   Wrench, Key, Briefcase, ArrowUpDown, ArrowUp, ArrowDown,
-  MessageCircle, Link2
+  MessageCircle, Link2, ChevronUp, ChevronDown
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import checklistImage from "../../assets/checklist.png";
 import logoImage from "../../assets/logo.png";
 import agentSignatureImage from "../../assets/cache.png";
+
+// ========== NEW HELPER FUNCTIONS ==========
+// Helper to get user display name (used in reception_notes)
+const getUserDisplayName = (user) => {
+  if (!user) return "—";
+  return user.Fullname || user.fullname || user.name || user.username || "—";
+};
+
+// Builds the JSON payload stored on reservation.reception_notes
+const buildReceptionNotesJSON = (reservation, currentUser) => {
+  return JSON.stringify({
+    livre_par: getUserDisplayName(currentUser),
+    receptionne_par: reservation?.created_by || "—"
+  });
+};
+
+// Places the captured contract image so it always fits on a single A4 page
+const addImageFittedToPage = (doc, imgData, canvas, margin = 10) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const availableWidth = pageWidth - margin * 2;
+  const availableHeight = pageHeight - margin * 2;
+
+  let imgWidth = availableWidth;
+  let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  if (imgHeight > availableHeight) {
+    imgHeight = availableHeight;
+    imgWidth = (canvas.width * imgHeight) / canvas.height;
+  }
+
+  const xOffset = margin + (availableWidth - imgWidth) / 2;
+  const yOffset = margin + (availableHeight - imgHeight) / 2;
+
+  doc.addImage(imgData, "PNG", xOffset, yOffset, imgWidth, imgHeight);
+};
 
 const downloadAndOpenPDF = (doc, filename) => {
   const pdfBlob = doc.output('blob');
@@ -164,7 +200,7 @@ const SignatureBlock = ({ label, signature = "", option }) => {
   );
 };
 
-// ==================== ContractLocation ====================
+// ==================== ContractLocation (enhanced with prolongation display) ====================
 const ContractLocation = ({
   reservation,
   showSignatures = false,
@@ -283,6 +319,18 @@ const ContractLocation = ({
   };
 
   const locataireSignature = signatures.locataire_image || signatures.locataire || '';
+
+  // ===== READ reception_notes from reservation (JSON) =====
+  let receptionNotes = {};
+  if (reservation?.reception_notes) {
+    try {
+      receptionNotes = JSON.parse(reservation.reception_notes);
+    } catch (e) {
+      receptionNotes = {};
+    }
+  }
+  const livrePar = receptionNotes.livre_par || currentUserName;
+  const receptionnePar = receptionNotes.receptionne_par || reservationCreatorName;
 
   return (
     <div className="contract-container-print" id={containerId}>
@@ -417,14 +465,31 @@ const ContractLocation = ({
                 <div className="section-content">
                   <div className="field-row"><span className="field-label">Départ :</span><span className="field-value">{getDisplayValue(datesOption, `${formatDate(reservation?.start_date)} à ${reservation?.start_time || "08:00"}`)}</span></div>
                   <div className="field-row"><span className="field-label">Retour :</span><span className="field-value">{getDisplayValue(datesOption, `${formatDate(reservation?.end_date)} à ${reservation?.end_time || "18:00"}`)}</span></div>
-                  <div className="field-row"><span className="field-label">Durée :</span><span className="field-value">{getDisplayValue(rentalDaysOption, `${calculateRentalDays()} jours`)}</span></div>
+                  {/* ===== ENHANCED DURÉE with prolongation ===== */}
+                  <div className="field-row">
+                    <span className="field-label">Durée :</span>
+                    <span className="field-value">
+                      {getDisplayValue(rentalDaysOption, 
+                        `${calculateRentalDays()} jours` + 
+                        (reservation.prolongation_days > 0 ? ` (dont prolongation: ${reservation.prolongation_days} jours)` : '')
+                      )}
+                    </span>
+                  </div>
+                  {reservation.prolongation_days > 0 && (
+                    <div className="field-row">
+                      <span className="field-label">Prolongation :</span>
+                      <span className="field-value">{reservation.prolongation_days} jours</span>
+                    </div>
+                  )}
+                  {/* ============================================= */}
                   <div className="field-row"><span className="field-label">Km départ :</span><span className="field-value">{getDisplayValue(kilometrageOption, `${reservation?.kilometrage_sortie || "—"} km`)}</span></div>
                   <div className="field-row">
                     <span className="field-label">Km retour :</span>
                     <span className="field-value">{getDisplayValue(kilometrageOption, reservation?.kilometrage_entree ? `${reservation.kilometrage_entree} km` : "—")}</span>
                   </div>
-                  <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, currentUserName)}</span></div>
-                  <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, reservationCreatorName)}</span></div>
+                  {/* ===== USE livré par / reçu par from reception_notes ===== */}
+                  <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, livrePar)}</span></div>
+                  <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, receptionnePar)}</span></div>
                 </div>
               </div>
 
@@ -950,7 +1015,7 @@ const SecondDriverSearch = ({ clients, selectedClientId, selectedSecondDriverId,
   );
 };
 
-// ==================== SousLocationSearch (MODIFIED) ====================
+// ==================== SousLocationSearch ====================
 const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, canCreate = false }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -1021,7 +1086,6 @@ const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, 
         </div>
       )}
 
-      {/* ✅ Creation button only if user has permission */}
       {canCreate && (
         <button
           type="button"
@@ -1036,9 +1100,9 @@ const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, 
   );
 };
 
-// ==================== ReservationForm (MODIFIED) ====================
+// ==================== ReservationForm (avec prolongation days et bouton "Créer & Contrat") ====================
 const ReservationForm = ({
-  isOpen, onClose, onSubmit, editingReservation, clients, cars, matricules, submitting
+  isOpen, onClose, onSubmit, onSubmitAndNavigate, editingReservation, clients, cars, matricules, submitting
 }) => {
   const dispatch = useDispatch();
   const user = useSelector(selectUser);
@@ -1049,7 +1113,6 @@ const ReservationForm = ({
     (Array.isArray(myPermissions) && myPermissions.includes('sous-locations'))
   );
 
-  // Use Redux selector for sous-locations
   const sousLocations = useSelector(selectSousLocations);
 
   const [formData, setFormData] = useState({
@@ -1073,6 +1136,7 @@ const ReservationForm = ({
     kilometrage_entree: "",
     sous_location_id: "",
     can_extend_days: false,
+    prolongation_days: 0,
   });
 
   const [clientSearch, setClientSearch] = useState("");
@@ -1169,6 +1233,7 @@ const ReservationForm = ({
         kilometrage_entree: editingReservation.kilometrage_entree || "",
         sous_location_id: editingReservation.sous_location_id || "",
         can_extend_days: editingReservation.can_extend_days || false,
+        prolongation_days: editingReservation.prolongation_days || 0,
       });
       setPaymentHistory(
         Array.isArray(editingReservation.payment_history)
@@ -1234,33 +1299,40 @@ const ReservationForm = ({
     setFormData(prev => ({ ...prev, remaining_amount: remaining }));
   }, [formData.total_price, formData.amount_paid]);
 
-  // =============== NOUVEAU : Auto-remplir les heures selon le statut (HH:MM) ===============
-  useEffect(() => {
-    const now = new Date();
-    const currentDate = now.toISOString().split('T')[0];
-    const currentTime = now.toTimeString().slice(0, 5);
+  // =============== Auto-remplir les heures selon le statut (HH:MM) ===============
+  const isFirstRender = useRef(true);
 
-    if (formData.status === 'confirmed') {
-      setFormData(prev => ({ ...prev, start_time: currentTime }));
-    }
+useEffect(() => {
+  if (isFirstRender.current) {
+    isFirstRender.current = false;
+    return;
+  }
+  // Exécution uniquement après le premier rendu (donc quand l'utilisateur change le statut)
+  const now = new Date();
+  const currentDate = now.toISOString().split('T')[0];
+  const currentTime = now.toTimeString().slice(0, 5);
 
-    if (formData.status === 'completed') {
-      setFormData(prev => ({
-        ...prev,
-        end_date: currentDate,
-        end_time: currentTime
-      }));
-    }
-  }, [formData.status]);
+  if (formData.status === 'confirmed') {
+    setFormData(prev => ({ ...prev, start_time: currentTime }));
+  }
 
-  // Charger les sous-locations quand le formulaire s'ouvre (juste dispatch, store gère l'état)
+  if (formData.status === 'completed') {
+    setFormData(prev => ({
+      ...prev,
+      end_date: currentDate,
+      end_time: currentTime
+    }));
+  }
+}, [formData.status]);
+
+  // Charger les sous-locations quand le formulaire s'ouvre
   useEffect(() => {
     if (isOpen) {
       dispatch(fetchSousLocations());
     }
   }, [isOpen, dispatch]);
 
-  // ---- Gestion des dates (exclusif) ----
+  // ---- Gestion des dates ----
   const handleStartDateChange = (value) => {
     setFormData(prev => ({ ...prev, start_date: value }));
     if (value && formData.rental_days) {
@@ -1416,6 +1488,7 @@ const ReservationForm = ({
     toast.success("Paiement supprimé");
   };
 
+  // ===== Soumission classique =====
   const handleSubmit = async (e) => {
     e.preventDefault();
     let clientId = formData.client_id;
@@ -1433,6 +1506,28 @@ const ReservationForm = ({
       payment_history: paymentHistory
     };
     onSubmit(reservationData);
+  };
+
+  // ===== Soumission avec navigation vers le contrat =====
+  const handleSubmitAndNavigate = (e) => {
+    e.preventDefault();
+    let clientId = formData.client_id;
+    if (isNewClient && !clientId) {
+      toast.error("Veuillez confirmer la création du client en cliquant sur 'Confirmer la création'");
+      return;
+    }
+    if (!clientId) {
+      toast.error("Veuillez sélectionner ou créer un client");
+      return;
+    }
+    const reservationData = {
+      ...formData,
+      client_id: clientId,
+      payment_history: paymentHistory
+    };
+    if (onSubmitAndNavigate) {
+      onSubmitAndNavigate(reservationData);
+    }
   };
 
   if (!isOpen) return null;
@@ -1562,7 +1657,7 @@ const ReservationForm = ({
                 /></div>
               </div>
             </div>
-            {/* Sous‑location & prolongation (moved here) */}
+
             <div className="inline-section">
               <div className="inline-section-header"><Tag size={18} /><h3>Sous‑location & prolongation</h3></div>
               <div className="inline-grid-2">
@@ -1578,15 +1673,38 @@ const ReservationForm = ({
                 </div>
                 <div className="inline-field">
                   <label>Prolongation autorisée</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-                    <input
-                      type="checkbox"
-                      checked={formData.can_extend_days || false}
-                      onChange={(e) => setFormData({ ...formData, can_extend_days: e.target.checked })}
-                    />
-                    <span style={{ fontSize: '0.8rem', color: '#475569' }}>
-                      Le client pourra prolonger la location
-                    </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                    <label className="inline-checkbox" style={{ marginBottom: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.can_extend_days || false}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setFormData(prev => ({
+                            ...prev,
+                            can_extend_days: checked,
+                            prolongation_days: checked ? (prev.prolongation_days || 1) : 0,
+                          }));
+                        }}
+                      />
+                      <span>Le client pourra prolonger la location</span>
+                    </label>
+                    {formData.can_extend_days && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 500, color: '#475569' }}>Jours à ajouter :</label>
+                        <input
+                          type="number"
+                          className="inline-input"
+                          style={{ width: '80px', padding: '0.25rem 0.5rem' }}
+                          value={formData.prolongation_days || 1}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 0;
+                            setFormData(prev => ({ ...prev, prolongation_days: val > 0 ? val : 1 }));
+                          }}
+                          min="1"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1734,7 +1852,6 @@ const ReservationForm = ({
               <div className="inline-field">
                 <textarea className="inline-textarea" rows="3" value={formData.notes} onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))} placeholder="Notes supplémentaires..." />
               </div>
-              
             </div>
           </div>
         </div>
@@ -1790,13 +1907,11 @@ const ReservationForm = ({
                         name: newSousLocationName,
                         description: newSousLocationDesc
                       })).unwrap();
-                      // No need to update local state; Redux will update via fetch
                       setFormData({ ...formData, sous_location_id: result.id });
                       setShowCreateSousLocationModal(false);
                       setNewSousLocationName('');
                       setNewSousLocationDesc('');
                       toast.success('Sous‑location créée');
-                      // Refresh list
                       dispatch(fetchSousLocations());
                     } catch (err) {
                       toast.error(err.message || 'Erreur');
@@ -1814,17 +1929,39 @@ const ReservationForm = ({
 
         <div className="inline-form-footer">
           <button type="button" className="inline-secondary-btn" onClick={onClose}>Annuler</button>
+          {/* Bouton classique */}
           <button type="submit" className="inline-primary-btn" disabled={submitting}>
             {submitting ? "Traitement..." : (editingReservation ? "Mettre à jour" : "Créer la réservation")}
           </button>
+          {/* Bouton "Créer & Contrat" ou "Mettre à jour & Contrat" */}
+          {onSubmitAndNavigate && (
+            <button
+              type="button"
+              className="inline-primary-btn"
+              onClick={handleSubmitAndNavigate}
+              disabled={submitting}
+              style={{
+                background: '#3b82f6',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#2563eb'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#3b82f6'}
+            >
+              {submitting ? "Traitement..." : (editingReservation ? "Mettre à jour & Contrat" : "Créer & Contrat")}
+            </button>
+          )}
         </div>
       </form>
     </div>
   );
 };
 
-// ==================== ContractViewPage ====================
+// ==================== ContractViewPage (with reception_notes override) ====================
 const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
+  const dispatch = useDispatch();
+
+  const [receptionNotesOverride, setReceptionNotesOverride] = useState(reservation?.reception_notes || null);
+
   const [contractSignatures, setContractSignatures] = useState({
     agent: reservation?.signatures?.agent || "",
     locataire: reservation?.signatures?.locataire || "",
@@ -1882,8 +2019,17 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   const generateContractPDF = async (includeSignatures = false) => {
     try {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+
+      const notesJSON = buildReceptionNotesJSON(reservation, currentUser);
+      try {
+        await dispatch(updateReservation({ id: reservation.id, data: { reception_notes: notesJSON } })).unwrap();
+        setReceptionNotesOverride(notesJSON);
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (e) {
+        console.error("Failed to save reception_notes", e);
+      }
+
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-      const pageWidth = doc.internal.pageSize.getWidth();
       const contractElement = document.getElementById("contract-print-view");
       if (!contractElement) throw new Error("Contract element not found");
       const contractClone = contractElement.cloneNode(true);
@@ -1918,9 +2064,7 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
       const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
       document.body.removeChild(contractClone);
       const imgData = canvas.toDataURL("image/png", 1.0);
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+      addImageFittedToPage(doc, imgData, canvas);
 
       const filename = `contrat-location-${reservation.id}.pdf`;
       downloadAndOpenPDF(doc, filename);
@@ -2005,7 +2149,12 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
           </div>
         </div>
         <ContractLocation
-          reservation={{ ...reservation, signatures: mergedSignatures, paperwork: contractPaperwork }}
+          reservation={{
+            ...reservation,
+            signatures: mergedSignatures,
+            paperwork: contractPaperwork,
+            reception_notes: receptionNotesOverride ?? reservation?.reception_notes
+          }}
           showSignatures={true}
           currentUser={currentUser}
           clients={clients}
@@ -2057,7 +2206,7 @@ export default function AdminReservations() {
   const loading = useSelector(selectReservationsLoading);
   const currentUser = useSelector(selectUser);
 
-  const [details, setDetails] = useState(null);
+  const [expandedRowId, setExpandedRowId] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -2083,7 +2232,7 @@ export default function AdminReservations() {
   });
   const [showDisplayOptions, setShowDisplayOptions] = useState(false);
 
-  const [sortField, setSortField] = useState("id");
+  const [sortField, setSortField] = useState("start_date");
   const [sortDirection, setSortDirection] = useState("desc");
   const [startDateFilter, setStartDateFilter] = useState("");
   const [endDateFilter, setEndDateFilter] = useState("");
@@ -2178,6 +2327,25 @@ export default function AdminReservations() {
     }
   };
 
+  const handleCreateAndNavigate = async (data) => {
+    setSubmitting(true);
+    try {
+      const result = await dispatch(createReservation(data)).unwrap();
+      const reservation = result.reservation || result;
+      toast.success("Réservation créée avec succès!");
+      await dispatch(fetchReservations(true));
+      await dispatch(refreshMatricules(true));
+      // Fermer le formulaire et ouvrir le contrat
+      setShowReservationForm(false);
+      setSelectedContractReservation(reservation);
+      setShowContract(true);
+    } catch (error) {
+      toast.error(error.message || "Erreur lors de la création");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleUpdateReservation = async (data) => {
     setSubmitting(true);
     try {
@@ -2198,6 +2366,25 @@ export default function AdminReservations() {
     }
   };
 
+  const handleUpdateAndNavigate = async (data) => {
+    setSubmitting(true);
+    try {
+      const result = await dispatch(updateReservation({ id: editingReservation.id, data })).unwrap();
+      const reservation = result.reservation || result;
+      toast.success("Réservation modifiée avec succès!");
+      await dispatch(fetchReservations(true));
+      await dispatch(refreshMatricules(true));
+      setShowReservationForm(false);
+      setEditingReservation(null);
+      setSelectedContractReservation(reservation);
+      setShowContract(true);
+    } catch (error) {
+      toast.error(error.message || "Erreur lors de la modification");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleEdit = (reservation) => {
     setEditingReservation(reservation);
     setShowReservationForm(true);
@@ -2208,7 +2395,7 @@ export default function AdminReservations() {
     setShowReservationForm(true);
   };
 
-  // ===== Confirm Modal Logic (avec start_time automatique HH:MM) =====
+  // ===== Confirm Modal Logic =====
   const openConfirmModal = (reservation) => {
     const carId = reservation.car_id;
     const reservedMatriculeIds = reservations
@@ -2250,7 +2437,6 @@ export default function AdminReservations() {
       const code = updatedReservation.signature_code || pendingReservationId;
 
       toast.success("Réservation confirmée avec succès !");
-      // Les appels à fetchReservations et refreshMatricules ont été supprimés
 
       const link = `${window.location.origin}/sign-contract/${token}`;
       toast.info(
@@ -2268,7 +2454,7 @@ export default function AdminReservations() {
     setSelectedMatriculeId('');
   };
 
-  // ===== Complete Modal Logic (avec date et heure actuelles HH:MM) =====
+  // ===== Complete Modal Logic =====
   const openCompleteModal = (reservation) => {
     setCompleteReservationId(reservation.id);
     setKilometrageRetour(reservation.kilometrage_entree || reservation.matricule_kilometrage_at_start || '');
@@ -2296,7 +2482,6 @@ export default function AdminReservations() {
         }
       })).unwrap();
       toast.success("Réservation terminée avec succès !");
-      // Les appels à fetchReservations et refreshMatricules ont été supprimés
     } catch (error) {
       toast.error(error.message || "Erreur lors de la terminaison");
     }
@@ -2509,7 +2694,7 @@ export default function AdminReservations() {
     return `${diffDays} jours restants`;
   };
 
-  // ===== Gestion de l'impression avec popup =====
+  // ===== Gestion de l'impression (standalone) =====
   const handlePrintClick = (reservation) => {
     setSelectedContractReservation(reservation);
     setPrintReservation(reservation);
@@ -2524,11 +2709,21 @@ export default function AdminReservations() {
     }, 200);
   };
 
+  // ===== generateContractPDF for the list (standalone) – updated with fitted scaling and reception_notes =====
   const generateContractPDF = async (reservation, includeSignatures = false) => {
     try {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+
+      const notesJSON = buildReceptionNotesJSON(reservation, currentUser);
+      try {
+        await dispatch(updateReservation({ id: reservation.id, data: { reception_notes: notesJSON } })).unwrap();
+        reservation.reception_notes = notesJSON;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (e) {
+        console.error("Failed to save reception_notes", e);
+      }
+
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-      const pageWidth = doc.internal.pageSize.getWidth();
       const contractElement = document.getElementById("contract-print-hidden");
       if (!contractElement) {
         console.error("Contract element not found");
@@ -2567,9 +2762,7 @@ export default function AdminReservations() {
       const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
       document.body.removeChild(contractClone);
       const imgData = canvas.toDataURL("image/png", 1.0);
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+      addImageFittedToPage(doc, imgData, canvas);
 
       const filename = `contrat-location-${reservation.id}.pdf`;
       downloadAndOpenPDF(doc, filename);
@@ -2602,11 +2795,9 @@ export default function AdminReservations() {
   // ----- Filtering and sorting (EXCLUT pending, cancelled, contacted) -----
   const filteredReservations = useMemo(() => {
     let filtered = reservations.filter(r => {
-      // ============ EXCLUDE pending, cancelled, contacted ============
       if (r.status === 'pending' || r.status === 'cancelled' || r.status === 'contacted') {
         return false;
       }
-      // ==============================================================
 
       const client = clients.find(c => c.id === r.client_id);
       const car = cars.find(c => c.id === r.car_id);
@@ -2673,7 +2864,6 @@ export default function AdminReservations() {
     filtered.sort((a, b) => {
       let aVal, bVal;
       switch (sortField) {
-        case "id": aVal = a.id; bVal = b.id; break;
         case "client": const aClient = clients.find(c => c.id === a.client_id); const bClient = clients.find(c => c.id === b.client_id); aVal = aClient ? `${aClient.prenom} ${aClient.nom}` : ""; bVal = bClient ? `${bClient.prenom} ${bClient.nom}` : ""; break;
         case "vehicle": const aCar = cars.find(c => c.id === a.car_id); const bCar = cars.find(c => c.id === b.car_id); aVal = aCar ? `${aCar.brand} ${aCar.model}` : ""; bVal = bCar ? `${bCar.brand} ${bCar.model}` : ""; break;
         case "matricule": const aMat = matricules.find(m => m.id === a.matricule_id); const bMat = matricules.find(m => m.id === b.matricule_id); aVal = aMat?.matricule_code || ""; bVal = bMat?.matricule_code || ""; break;
@@ -2849,6 +3039,7 @@ export default function AdminReservations() {
           isOpen={showReservationForm}
           onClose={() => { setShowReservationForm(false); setEditingReservation(null); }}
           onSubmit={editingReservation ? handleUpdateReservation : handleCreateReservation}
+          onSubmitAndNavigate={editingReservation ? handleUpdateAndNavigate : handleCreateAndNavigate}
           editingReservation={editingReservation}
           clients={clients}
           cars={cars}
@@ -2916,7 +3107,6 @@ export default function AdminReservations() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th onClick={() => handleSort("id")} className="sortable-header">ID {getSortIcon("id")}</th>
                     <th onClick={() => handleSort("client")} className="sortable-header">Client {getSortIcon("client")}</th>
                     <th onClick={() => handleSort("vehicle")} className="sortable-header">Véhicule / Matricule {getSortIcon("vehicle")}</th>
                     <th onClick={() => handleSort("start_date")} className="sortable-header">Période {getSortIcon("start_date")}</th>
@@ -2931,7 +3121,7 @@ export default function AdminReservations() {
                 </thead>
                 <tbody>
                   {paginated.length === 0 ? (
-                    <tr><td colSpan="11" className="text-center py-12">Aucune réservation</td></tr>
+                    <tr><td colSpan="10" className="text-center py-12">Aucune réservation</td></tr>
                   ) : (
                     paginated.map(r => {
                       const client = clients.find(c => c.id === r.client_id);
@@ -2940,161 +3130,228 @@ export default function AdminReservations() {
                       const days = calculateDays(r.start_date, r.end_date);
                       const daysRemaining = calculateDaysRemaining(r);
                       const secondDriver = clients.find(c => c.id === r.second_driver_client_id);
+                      const rowPaymentHistory = Array.isArray(r.payment_history) ? r.payment_history : [];
+                      const isExpanded = expandedRowId === r.id;
                       return (
-                        <tr key={r.id}>
-                          <td className="font-medium">#{r.id}</td>
-                          <td>
-                            <div className="flex items-center gap-1">
-                              <User size={14} />
-                              <div>
-                                <div>{client ? `${client.prenom} ${client.nom}` : "—"}</div>
-                                {secondDriver && r.has_second_driver && (
-                                  <div className="second-driver-info"><Users size={10} /> {secondDriver.prenom} {secondDriver.nom}</div>
-                                )}
+                        <Fragment key={r.id}>
+                          <tr>
+                            <td>
+                              <div className="flex items-center gap-1">
+                                <User size={14} />
+                                <div>
+                                  <div>{client ? `${client.prenom} ${client.nom}` : "—"}</div>
+                                  {secondDriver && r.has_second_driver && (
+                                    <div className="second-driver-info"><Users size={10} /> {secondDriver.prenom} {secondDriver.nom}</div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td>
-  <div className="vehicle-info-cell">
-    <div className="vehicle-model">
-      {car ? `${car.brand} ${car.model}` : "—"}
-    </div>
-    <div className="vehicle-matricule">
-      {mat?.matricule_code || "—"}
-      {car?.color && (
-        <span className="vehicle-color-info">
-          <span className="color-dot" style={{ backgroundColor: car.color }} title={car.color}></span>
-          <span className="color-text">{car.color}</span>
-        </span>
-      )}
-    </div>
-  </div>
-</td>
-<td>
-  <div style={{
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    fontSize: '0.75rem'
-  }}>
-    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-      <Calendar size={12} style={{ color: '#64748b' }} />
-      {new Date(r.start_date).toLocaleDateString("fr-FR")}
-    </span>
-    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0b0d0e' }}>
-      <span style={{ marginLeft: '16px' }}>→</span>
-      {new Date(r.end_date).toLocaleDateString("fr-FR")}
-    </span>
-  </div>
-</td>                          <td>
-  <span style={{
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    background: '#f1f5f9',
-    color: '#1e293b',
-    padding: '2px 8px',
-    borderRadius: '12px',
-    fontSize: '0.75rem',
-    fontWeight: '500'
-  }}>
-    <CalendarDays size={12} style={{ color: '#eab308' }} />
-    {days} {days > 1 ? 'jours' : 'jour'}
-  </span>
-</td>
-                          <td className={`days-remaining-cell ${r.status === "retard" ? "late" : ""}`}>{daysRemaining}</td>
-                          <td>
-  <span style={{
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    background: '#fef3c7',
-    color: '#92400e',
-    padding: '2px 10px',
-    borderRadius: '20px',
-    fontWeight: '700',
-    fontSize: '0.875rem',
-    border: '1px solid #f59e0b'
-  }}>
-    <Coins size={14} style={{ color: '#d97706' }} />
-    {r.total_price} DH
-  </span>
-</td>
-                          <td>{getStatusBadge(r.status)}</td>
-                          <td>
-  {r.can_extend_days ? (
-    <span className="badge" style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      background: '#dcfce7',
-      color: '#166534',
-      padding: '2px 10px',
-      borderRadius: '20px',
-      fontWeight: '600',
-      fontSize: '0.75rem'
-    }}>
-      <CheckCircle size={14} /> Oui
-    </span>
-  ) : (
-    <span className="badge" style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      background: '#f1f5f9',
-      color: '#475569',
-      padding: '2px 10px',
-      borderRadius: '20px',
-      fontWeight: '600',
-      fontSize: '0.75rem'
-    }}>
-      <XCircle size={14} /> Non
-    </span>
-  )}
-</td>
-                          <td>
-  {r.sous_location ? (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-      <Tag size={14} /> {r.sous_location.name}
-    </span>
-  ) : (
-    <span className="badge" style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      background: '#eab308',
-      color: '#0f172a',
-      padding: '2px 10px',
-      borderRadius: '20px',
-      fontWeight: '600',
-      fontSize: '0.75rem'
-    }}>
-      <Home size={14} /> Propre
-    </span>
-  )}
-</td>
-                          <td className="text-right">
-                            <div className="action-buttons">
-                              {(r.status === "confirmed" || r.status === "retard") && (
-                                <button onClick={() => setStatus(r.id, "completed")} className="action-btn action-btn-primary" title="Terminer"><CheckCircle size={16} /></button>
+                            </td>
+                            <td>
+                              <div className="vehicle-info-cell">
+                                <div className="vehicle-model">
+                                  {car ? `${car.brand} ${car.model}` : "—"}
+                                </div>
+                                <div className="vehicle-matricule">
+                                  {mat?.matricule_code || "—"}
+                                  {car?.color && (
+                                    <span className="vehicle-color-info">
+                                      <span className="color-dot" style={{ backgroundColor: car.color }} title={car.color}></span>
+                                      <span className="color-text">{car.color}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '2px',
+                                fontSize: '0.75rem'
+                              }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Calendar size={12} style={{ color: '#64748b' }} />
+                                  {new Date(r.start_date).toLocaleDateString("fr-FR")}
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0b0d0e' }}>
+                                  <span style={{ marginLeft: '16px' }}>→</span>
+                                  {new Date(r.end_date).toLocaleDateString("fr-FR")}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#f1f5f9',
+                                color: '#1e293b',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: '500'
+                              }}>
+                                <CalendarDays size={12} style={{ color: '#eab308' }} />
+                                {days} {days > 1 ? 'jours' : 'jour'}
+                              </span>
+                            </td>
+                            <td className={`days-remaining-cell ${r.status === "retard" ? "late" : ""}`}>{daysRemaining}</td>
+                            <td>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#fef3c7',
+                                color: '#92400e',
+                                padding: '2px 10px',
+                                borderRadius: '20px',
+                                fontWeight: '700',
+                                fontSize: '0.875rem',
+                                border: '1px solid #f59e0b'
+                              }}>
+                                <Coins size={14} style={{ color: '#d97706' }} />
+                                {r.total_price} DH
+                              </span>
+                            </td>
+                            <td>{getStatusBadge(r.status)}</td>
+                            <td>
+                              {r.can_extend_days ? (
+                                <span className="badge" style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#dcfce7',
+                                  color: '#166534',
+                                  padding: '2px 10px',
+                                  borderRadius: '20px',
+                                  fontWeight: '600',
+                                  fontSize: '0.75rem'
+                                }}>
+                                  <CheckCircle size={14} /> Oui
+                                </span>
+                              ) : (
+                                <span className="badge" style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#f1f5f9',
+                                  color: '#475569',
+                                  padding: '2px 10px',
+                                  borderRadius: '20px',
+                                  fontWeight: '600',
+                                  fontSize: '0.75rem'
+                                }}>
+                                  <XCircle size={14} /> Non
+                                </span>
                               )}
-                              <button
-                                onClick={() => handleSignatureLink(r)}
-                                className="action-btn action-btn-link"
-                                title="Copier le lien de signature"
-                                style={{ color: '#3b82f6' }}
-                              >
-                                <Link2 size={16} />
-                              </button>
-                              <button onClick={() => handleViewContract(r)} className="action-btn action-btn-info" title="Voir contrat"><FileText size={16} /></button>
-                              <button onClick={() => handlePrintClick(r)} className="action-btn action-btn-print" title="Imprimer"><Printer size={16} /></button>
-                              <button onClick={() => handleWhatsApp(r)} className="action-btn action-btn-whatsapp" title="Envoyer un message WhatsApp"><MessageCircle size={16} /></button>
-                              <button onClick={() => handleEdit(r)} className="action-btn action-btn-edit" title="Modifier"><Edit size={16} /></button>
-                              <button onClick={() => setDetails(r)} className="action-btn action-btn-view" title="Détails"><Eye size={16} /></button>
-                              <button onClick={() => handleDeleteClick(r)} className="action-btn action-btn-delete" title="Supprimer"><Trash2 size={16} /></button>
-                            </div>
-                          </td>
-                        </tr>
+                            </td>
+                            <td>
+                              {r.sous_location ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <Tag size={14} /> {r.sous_location.name}
+                                </span>
+                              ) : (
+                                <span className="badge" style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#eab308',
+                                  color: '#0f172a',
+                                  padding: '2px 10px',
+                                  borderRadius: '20px',
+                                  fontWeight: '600',
+                                  fontSize: '0.75rem'
+                                }}>
+                                  <Home size={14} /> Propre
+                                </span>
+                              )}
+                            </td>
+                            <td className="text-right">
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '4px', justifyContent: 'end' }}>
+    {(r.status === "confirmed" || r.status === "retard") && (
+      <button onClick={() => setStatus(r.id, "completed")} className="action-btn action-btn-primary" title="Terminer"><CheckCircle size={16} /></button>
+    )}
+    <button onClick={() => handleSignatureLink(r)} className="action-btn action-btn-link" title="Copier le lien de signature"><Link2 size={16} /></button>
+    <button onClick={() => handleViewContract(r)} className="action-btn action-btn-info" title="Voir contrat"><FileText size={16} /></button>
+    <button onClick={() => handlePrintClick(r)} className="action-btn action-btn-print" title="Imprimer"><Printer size={16} /></button>
+    <button onClick={() => handleWhatsApp(r)} className="action-btn action-btn-whatsapp" title="Envoyer un message WhatsApp"><MessageCircle size={16} /></button>
+    <button onClick={() => handleEdit(r)} className="action-btn action-btn-edit" title="Modifier"><Edit size={16} /></button>
+    <button onClick={() => setExpandedRowId(isExpanded ? null : r.id)} className="action-btn action-btn-view" title="Détails">
+      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+    </button>
+    <button onClick={() => handleDeleteClick(r)} className="action-btn action-btn-delete" title="Supprimer"><Trash2 size={16} /></button>
+  </div>
+</td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan="10" style={{ padding: 0, background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)', borderBottom: '1px solid #e2e8f0' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '18px 24px 22px', alignItems: 'stretch' }}>
+                                  {/* Paiement */}
+                                  <div style={{ minWidth: '230px', flex: '1 1 230px', background: '#ffffff', borderRadius: '12px', borderLeft: '4px solid #06b6d4', boxShadow: '0 1px 4px rgba(15, 23, 42, 0.06)', padding: '14px 16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.75rem', color: '#0891b2', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                      <DollarSign size={14} /> Paiement
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                                        <span style={{ color: '#64748b' }}>Total</span>
+                                        <span style={{ fontWeight: 700, color: '#0f172a' }}>{r.total_price} DH</span>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                                        <span style={{ color: '#64748b' }}>Payé</span>
+                                        <span style={{ fontWeight: 700, color: '#16a34a', background: '#f0fdf4', padding: '1px 8px', borderRadius: '10px' }}>{r.amount_paid} DH</span>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                                        <span style={{ color: '#64748b' }}>Restant</span>
+                                        <span style={{ fontWeight: 700, color: '#dc2626', background: '#fef2f2', padding: '1px 8px', borderRadius: '10px' }}>{r.remaining_amount} DH</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {/* Historique des paiements */}
+                                  {rowPaymentHistory.length > 0 && (
+                                    <div style={{ minWidth: '260px', flex: '1 1 260px', background: '#ffffff', borderRadius: '12px', borderLeft: '4px solid #8b5cf6', boxShadow: '0 1px 4px rgba(15, 23, 42, 0.06)', padding: '14px 16px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.75rem', color: '#7c3aed', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                        <Receipt size={14} /> Historique des paiements
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        {rowPaymentHistory.map((p, idx) => (
+                                          <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', fontSize: '0.8rem', color: '#334155', padding: '4px 0', borderBottom: idx < rowPaymentHistory.length - 1 ? '1px dashed #e2e8f0' : 'none' }}>
+                                            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{new Date(p.date).toLocaleDateString("fr-FR")}</span>
+                                            <span style={{ fontWeight: 600, color: '#16a34a' }}>{p.amount} DH</span>
+                                            <span style={{ fontSize: '0.7rem', color: '#7c3aed', background: '#f5f3ff', padding: '1px 8px', borderRadius: '10px', textTransform: 'capitalize' }}>{p.method}</span>
+                                            {p.notes && <span style={{ color: '#64748b', fontSize: '0.75rem', fontStyle: 'italic' }}>{p.notes}</span>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {/* Prolongation */}
+                                  <div style={{ minWidth: '230px', flex: '1 1 230px', background: '#ffffff', borderRadius: '12px', borderLeft: r.can_extend_days && r.prolongation_days > 0 ? '4px solid #f59e0b' : '4px solid #cbd5e1', boxShadow: '0 1px 4px rgba(15, 23, 42, 0.06)', padding: '14px 16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.75rem', color: '#b45309', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                      <Tag size={14} /> Prolongation
+                                    </div>
+                                    {r.can_extend_days && r.prolongation_days > 0 ? (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                                          <span style={{ color: '#64748b' }}>Jours ajoutés</span>
+                                          <span style={{ fontWeight: 700, color: '#b45309', background: '#fffbeb', padding: '1px 8px', borderRadius: '10px' }}>+{r.prolongation_days} jours</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                                          <span style={{ color: '#64748b' }}>Ajoutée le</span>
+                                          <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                            {r.updated_at ? new Date(r.updated_at).toLocaleDateString("fr-FR") : "—"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Aucune prolongation</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       );
                     })
                   )}
@@ -3112,66 +3369,6 @@ export default function AdminReservations() {
               />
             )}
           </div>
-
-          {/* Details Modal */}
-          {details && (
-            <div className="modal-overlay">
-              <div className="modal">
-                <div className="modal-header"><h2 className="modal-title" style={{ padding: 0 }}>Détails réservation #{details.id}</h2><button onClick={() => setDetails(null)} className="modal-close"><X size={20} /></button></div>
-                {(() => {
-                  const client = clients.find(c => c.id === details.client_id);
-                  const car = cars.find(c => c.id === details.car_id);
-                  const mat = matricules.find(m => m.id === details.matricule_id);
-                  const secondDriver = clients.find(c => c.id === details.second_driver_client_id);
-                  let paymentHistory = details.payment_history;
-                  if (typeof paymentHistory === 'string') {
-                    try {
-                      paymentHistory = JSON.parse(paymentHistory);
-                    } catch (e) {
-                      paymentHistory = [];
-                    }
-                  }
-                  if (!Array.isArray(paymentHistory)) paymentHistory = [];
-
-                  return (
-                    <div className="details-grid">
-                      <div className="details-row"><span className="details-label"><User size={14} /> Client</span><span className="details-value">{client ? `${client.prenom} ${client.nom}` : "—"}</span></div>
-                      {client && (<><div className="details-row"><span className="details-label"><Mail size={14} /> Email</span><span>{client.email || "—"}</span></div><div className="details-row"><span className="details-label"><Phone size={14} /> Téléphone</span><span>{client.telephone || "—"}</span></div><div className="details-row"><span className="details-label"><MapPin size={14} /> Ville</span><span>{client.city || "—"}</span></div><div className="details-row"><span className="details-label"><IdCard size={14} /> CIN</span><span>{client.cin_number || "—"}</span></div></>)}
-                      {details.has_second_driver && secondDriver && (<><div className="details-row"><span className="details-label"><Users size={14} /> 2ème Conducteur</span><span>{secondDriver.prenom} {secondDriver.nom}</span></div><div className="details-row"><span className="details-label"><Phone size={14} /> Tél. conducteur</span><span>{secondDriver.telephone || "—"}</span></div></>)}
-                      <div className="details-row"><span className="details-label"><Car size={14} /> Véhicule</span><span>{car ? `${car.brand} ${car.model}` : "—"}</span></div>
-                      <div className="details-row"><span className="details-label"><IdCard size={14} /> Immatriculation</span><span className="font-mono">{mat?.matricule_code || "—"}</span></div>
-                      <div className="details-row"><span className="details-label"><Gauge size={14} /> Km départ</span><span>{details.kilometrage_sortie || "—"} km</span></div>
-                      {details.status === "completed" && (<div className="details-row"><span className="details-label"><Gauge size={14} /> Km retour</span><span>{details.kilometrage_entree || "—"} km</span></div>)}
-                      <div className="details-row"><span className="details-label"><Calendar size={14} /> Période</span><span>{new Date(details.start_date).toLocaleDateString("fr-FR")} → {new Date(details.end_date).toLocaleDateString("fr-FR")}</span></div>
-                      <div className="details-row"><span className="details-label"><Clock size={14} /> Heures</span><span>{details.start_time || "08:00"} → {details.end_time || "18:00"}</span></div>
-                      <div className="details-row"><span className="details-label"><CalendarDays size={14} /> Jours</span><span>{calculateDays(details.start_date, details.end_date)}</span></div>
-                      <div className="details-row"><span className="details-label"><DollarSign size={14} /> Total</span><span className="details-value">{details.total_price} DH</span></div>
-                      <div className="details-row"><span className="details-label"><DollarSign size={14} /> Payé</span><span>{details.amount_paid} DH</span></div>
-                      <div className="details-row"><span className="details-label"><DollarSign size={14} /> Restant</span><span>{details.remaining_amount} DH</span></div>
-                      <div className="details-row"><span className="details-label"><Info size={14} /> Statut</span><span>{getStatusBadge(details.status)}</span></div>
-                      <div className="details-row"><span className="details-label"><Tag size={14} /> Prolongation</span><span>{details.can_extend_days ? "✅ Oui" : "—"}</span></div>
-                      <div className="details-row"><span className="details-label"><Tag size={14} /> Sous‑location</span><span>{details.sous_location?.name || "—"}</span></div>
-                      {details.notes && (<div className="details-row"><span className="details-label"><Info size={14} /> Notes</span><span>{details.notes}</span></div>)}
-                      {paymentHistory.length > 0 && (
-                        <div className="details-row">
-                          <span className="details-label"><Receipt size={14} /> Paiements</span>
-                          <div>
-                            {paymentHistory.map((p, idx) => (
-                              <div key={idx} className="payment-item-detail">
-                                {new Date(p.date).toLocaleDateString("fr-FR")}: {p.amount} DH ({p.method})
-                                {p.notes && ` - ${p.notes}`}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-                <div className="modal-actions-footer"><button onClick={() => setDetails(null)} className="btn btn-secondary">Fermer</button></div>
-              </div>
-            </div>
-          )}
 
           {/* Delete Confirmation Modal */}
           {deleteModalOpen && reservationToDelete && (
