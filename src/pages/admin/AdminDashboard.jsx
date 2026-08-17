@@ -4630,7 +4630,21 @@ export default function AdminDashboard() {
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [selectedYear, setSelectedYear] = useState('all');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
-
+// ========== Chargement des données au montage ==========
+useEffect(() => {
+  const loadData = async () => {
+    await Promise.all([
+      dispatch(fetchClients()),
+      dispatch(fetchReservations()),
+      dispatch(fetchAccidents()),
+      dispatch(fetchCars()),
+      dispatch(fetchMatricules()),
+      dispatch(fetchContacts()),
+      dispatch(fetchUtilisateurs())
+    ]);
+  };
+  loadData();
+}, [dispatch]);
   const monthOptions = [
     { value: "all", label: "Tous" },
     { value: 'janvier', label: 'Janvier' },
