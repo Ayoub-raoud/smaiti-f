@@ -35,14 +35,12 @@ import checklistImage from "../../assets/checklist.png";
 import logoImage from "../../assets/logo.png";
 import agentSignatureImage from "../../assets/cache.png";
 
-// ========== NEW HELPER FUNCTIONS ==========
-// Helper to get user display name (used in reception_notes)
+// ========== HELPER FUNCTIONS ==========
 const getUserDisplayName = (user) => {
   if (!user) return "—";
   return user.Fullname || user.fullname || user.name || user.username || "—";
 };
 
-// Builds the JSON payload stored on reservation.reception_notes
 const buildReceptionNotesJSON = (reservation, currentUser) => {
   return JSON.stringify({
     livre_par: getUserDisplayName(currentUser),
@@ -50,7 +48,6 @@ const buildReceptionNotesJSON = (reservation, currentUser) => {
   });
 };
 
-// Places the captured contract image so it always fits on a single A4 page
 const addImageFittedToPage = (doc, imgData, canvas, margin = 10) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -200,7 +197,7 @@ const SignatureBlock = ({ label, signature = "", option }) => {
   );
 };
 
-// ==================== ContractLocation (enhanced with prolongation display) ====================
+// ==================== ContractLocation (enhanced) ====================
 const ContractLocation = ({
   reservation,
   showSignatures = false,
@@ -1031,7 +1028,6 @@ const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, 
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Guard against non-array
   const list = Array.isArray(sousLocations) ? sousLocations : [];
   const filtered = useMemo(() => {
     if (!searchTerm.trim()) return list;
@@ -1100,7 +1096,7 @@ const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, 
   );
 };
 
-// ==================== ReservationForm (avec prolongation days et bouton "Créer & Contrat") ====================
+// ==================== ReservationForm ====================
 const ReservationForm = ({
   isOpen, onClose, onSubmit, onSubmitAndNavigate, editingReservation, clients, cars, matricules, submitting
 }) => {
@@ -1159,7 +1155,6 @@ const ReservationForm = ({
     lieu_naissance: "", cin_delivre_le: "", permis_delivre_le: ""
   });
 
-  // Sous-location modal state
   const [showCreateSousLocationModal, setShowCreateSousLocationModal] = useState(false);
   const [newSousLocationName, setNewSousLocationName] = useState('');
   const [newSousLocationDesc, setNewSousLocationDesc] = useState('');
@@ -1195,7 +1190,6 @@ const ReservationForm = ({
     setFilteredMatricules(filtered);
   }, [matriculeSearch, matricules]);
 
-  // 1) Charger une réservation en édition
   useEffect(() => {
     if (editingReservation) {
       const computeRentalDays = (start, end) => {
@@ -1260,7 +1254,6 @@ const ReservationForm = ({
     }
   }, [editingReservation, clients, matricules]);
 
-  // 2) Filtrer les matricules par car_id
   useEffect(() => {
     if (formData.car_id) {
       const filtered = matricules.filter(m => m.car_id == formData.car_id);
@@ -1270,7 +1263,6 @@ const ReservationForm = ({
     }
   }, [formData.car_id, matricules]);
 
-  // 3) Mettre à jour kilometrage_sortie automatiquement
   useEffect(() => {
     if (formData.matricule_id) {
       const selectedMatriculeObj = matricules.find(m => m.id == formData.matricule_id);
@@ -1280,7 +1272,6 @@ const ReservationForm = ({
     }
   }, [formData.matricule_id, matricules]);
 
-  // 4) Auto-calcul du total (uniquement en création)
   useEffect(() => {
     if (!editingReservation && formData.car_id && formData.rental_days) {
       const car = cars.find(c => c.id == formData.car_id);
@@ -1291,7 +1282,6 @@ const ReservationForm = ({
     }
   }, [formData.car_id, formData.rental_days, cars, editingReservation]);
 
-  // 5) Mise à jour du montant restant
   useEffect(() => {
     const total = parseFloat(formData.total_price) || 0;
     const paid = parseFloat(formData.amount_paid) || 0;
@@ -1299,40 +1289,43 @@ const ReservationForm = ({
     setFormData(prev => ({ ...prev, remaining_amount: remaining }));
   }, [formData.total_price, formData.amount_paid]);
 
-  // =============== Auto-remplir les heures selon le statut (HH:MM) ===============
   const isFirstRender = useRef(true);
 
-useEffect(() => {
-  if (isFirstRender.current) {
-    isFirstRender.current = false;
-    return;
-  }
-  // Exécution uniquement après le premier rendu (donc quand l'utilisateur change le statut)
-  const now = new Date();
-  const currentDate = now.toISOString().split('T')[0];
-  const currentTime = now.toTimeString().slice(0, 5);
+  useEffect(() => {
+    // Ignorer le premier rendu
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
 
-  if (formData.status === 'confirmed') {
-    setFormData(prev => ({ ...prev, start_time: currentTime }));
-  }
+    // Si on est en train d'éditer une réservation, ne pas modifier les heures
+    if (editingReservation) {
+      return;
+    }
 
-  if (formData.status === 'completed') {
-    setFormData(prev => ({
-      ...prev,
-      end_date: currentDate,
-      end_time: currentTime
-    }));
-  }
-}, [formData.status]);
+    const now = new Date();
+    const currentDate = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
 
-  // Charger les sous-locations quand le formulaire s'ouvre
+    if (formData.status === 'confirmed') {
+      setFormData(prev => ({ ...prev, start_time: currentTime }));
+    }
+
+    if (formData.status === 'completed') {
+      setFormData(prev => ({
+        ...prev,
+        end_date: currentDate,
+        end_time: currentTime
+      }));
+    }
+  }, [formData.status, editingReservation]);
+
   useEffect(() => {
     if (isOpen) {
       dispatch(fetchSousLocations());
     }
   }, [isOpen, dispatch]);
 
-  // ---- Gestion des dates ----
   const handleStartDateChange = (value) => {
     setFormData(prev => ({ ...prev, start_date: value }));
     if (value && formData.rental_days) {
@@ -1431,49 +1424,49 @@ useEffect(() => {
   };
 
   const handleAddPayment = () => {
-  if (!newPayment.amount || parseFloat(newPayment.amount) <= 0) {
-    toast.error("Veuillez entrer un montant valide");
-    return;
-  }
-  const amount = parseFloat(newPayment.amount);
-  const currentTotalPaid = paymentHistory.reduce((sum, p) => sum + p.amount, 0);
-  const maxPossible = (formData.total_price || 0) - currentTotalPaid;
+    if (!newPayment.amount || parseFloat(newPayment.amount) <= 0) {
+      toast.error("Veuillez entrer un montant valide");
+      return;
+    }
+    const amount = parseFloat(newPayment.amount);
+    const currentTotalPaid = paymentHistory.reduce((sum, p) => sum + p.amount, 0);
+    const maxPossible = (formData.total_price || 0) - currentTotalPaid;
 
-  if (maxPossible <= 0) {
-    toast.error("Cette réservation est déjà entièrement payée.");
-    return;
-  }
+    if (maxPossible <= 0) {
+      toast.error("Cette réservation est déjà entièrement payée.");
+      return;
+    }
 
-  let actualAmount = amount;
-  if (actualAmount > maxPossible) {
-    actualAmount = maxPossible;
-    toast.info(`Le paiement a été ajusté à ${actualAmount} DH (reste à payer).`);
-  }
+    let actualAmount = amount;
+    if (actualAmount > maxPossible) {
+      actualAmount = maxPossible;
+      toast.info(`Le paiement a été ajusté à ${actualAmount} DH (reste à payer).`);
+    }
 
-  const payment = {
-    id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    amount: actualAmount,
-    date: newPayment.date,
-    method: newPayment.method,
-    notes: newPayment.notes || "",
-    created_at: new Date().toISOString()
+    const payment = {
+      id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      amount: actualAmount,
+      date: newPayment.date,
+      method: newPayment.method,
+      notes: newPayment.notes || "",
+      created_at: new Date().toISOString()
+    };
+
+    const updatedHistory = [...paymentHistory, payment];
+    setPaymentHistory(updatedHistory);
+    const newAmountPaid = updatedHistory.reduce((sum, p) => sum + p.amount, 0);
+    const newRemaining = (formData.total_price || 0) - newAmountPaid;
+
+    setFormData(prev => ({
+      ...prev,
+      amount_paid: newAmountPaid,
+      remaining_amount: newRemaining
+    }));
+
+    setNewPayment({ amount: "", date: new Date().toISOString().split("T")[0], method: "cash", notes: "" });
+    setShowAddPayment(false);
+    toast.success("Paiement ajouté");
   };
-
-  const updatedHistory = [...paymentHistory, payment];
-  setPaymentHistory(updatedHistory);
-  const newAmountPaid = updatedHistory.reduce((sum, p) => sum + p.amount, 0);
-  const newRemaining = (formData.total_price || 0) - newAmountPaid;
-
-  setFormData(prev => ({
-    ...prev,
-    amount_paid: newAmountPaid,
-    remaining_amount: newRemaining
-  }));
-
-  setNewPayment({ amount: "", date: new Date().toISOString().split("T")[0], method: "cash", notes: "" });
-  setShowAddPayment(false);
-  toast.success("Paiement ajouté");
-};
 
   const handleRemovePayment = (paymentId) => {
     const updatedHistory = paymentHistory.filter(p => p.id !== paymentId);
@@ -1488,7 +1481,6 @@ useEffect(() => {
     toast.success("Paiement supprimé");
   };
 
-  // ===== Soumission classique =====
   const handleSubmit = async (e) => {
     e.preventDefault();
     let clientId = formData.client_id;
@@ -1508,7 +1500,6 @@ useEffect(() => {
     onSubmit(reservationData);
   };
 
-  // ===== Soumission avec navigation vers le contrat =====
   const handleSubmitAndNavigate = (e) => {
     e.preventDefault();
     let clientId = formData.client_id;
@@ -1856,7 +1847,6 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Modal de création de sous-location */}
         {showCreateSousLocationModal && (
           <div className="modal-overlay" onClick={() => setShowCreateSousLocationModal(false)}>
             <div className="modal" style={{ maxWidth: '450px' }} onClick={(e) => e.stopPropagation()}>
@@ -1929,11 +1919,9 @@ useEffect(() => {
 
         <div className="inline-form-footer">
           <button type="button" className="inline-secondary-btn" onClick={onClose}>Annuler</button>
-          {/* Bouton classique */}
           <button type="submit" className="inline-primary-btn" disabled={submitting}>
             {submitting ? "Traitement..." : (editingReservation ? "Mettre à jour" : "Créer la réservation")}
           </button>
-          {/* Bouton "Créer & Contrat" ou "Mettre à jour & Contrat" */}
           {onSubmitAndNavigate && (
             <button
               type="button"
@@ -1956,7 +1944,7 @@ useEffect(() => {
   );
 };
 
-// ==================== ContractViewPage (with reception_notes override) ====================
+// ==================== ContractViewPage ====================
 const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   const dispatch = useDispatch();
 
@@ -1978,14 +1966,14 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
     autorisation: true
   });
   const [contractDisplayOptions, setContractDisplayOptions] = useState({
-    prices: "show",
+    prices: "dash",
     clientInfo: "show",
     secondDriver: "show",
     vehicleInfo: "show",
     deliveryReception: "show",
     rentalDates: "show",
     kilometrage: "show",
-    rentalDays: "show",
+    rentalDays: "dash",
     observations: "show",
     insurance: "show",
     depositGuarantee: "show",
@@ -2000,14 +1988,14 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   };
   const handleResetAllOptions = () => {
     setContractDisplayOptions({
-      prices: "show",
+      prices: "dash",
       clientInfo: "show",
       secondDriver: "show",
       vehicleInfo: "show",
       deliveryReception: "show",
       rentalDates: "show",
       kilometrage: "show",
-      rentalDays: "show",
+      rentalDays: "dash",
       observations: "show",
       insurance: "show",
       depositGuarantee: "show",
@@ -2198,6 +2186,8 @@ export default function AdminReservations() {
   const store = useStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const filterParam = searchParams.get('filter');
+  const focusParam = searchParams.get('focus');
+  const searchParam = searchParams.get('search'); // Pour la recherche par nom depuis AdminMatriculesClients
 
   const reservations = useSelector(selectReservations);
   const cars = useSelector(selectCars);
@@ -2225,8 +2215,8 @@ export default function AdminReservations() {
     vignette: true, visiteTechnique: true, autorisation: true
   });
   const [contractDisplayOptions, setContractDisplayOptions] = useState({
-    prices: "show", clientInfo: "show", secondDriver: "show",
-    vehicleInfo: "show", deliveryReception: "show", rentalDates: "show",
+    prices: "dash", clientInfo: "show", secondDriver: "show",
+    vehicleInfo: "show", deliveryReception: "show", rentalDates: "dash",
     kilometrage: "show", rentalDays: "show", observations: "show",
     insurance: "show", depositGuarantee: "show", signatures: "show"
   });
@@ -2265,6 +2255,41 @@ export default function AdminReservations() {
     };
     load();
   }, [dispatch]);
+
+  // ===== FOCUS FROM URL PARAMETER =====
+  useEffect(() => {
+    if (focusParam && reservations.length > 0) {
+      const found = reservations.find(r => r.id === parseInt(focusParam));
+      if (found) {
+        setSearch(`#${focusParam}`);
+        setCurrentPage(1);
+        setTimeout(() => {
+          const element = document.getElementById(`reservation-${focusParam}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.style.background = '#fef3c7';
+            setTimeout(() => {
+              element.style.background = '';
+            }, 3000);
+          }
+        }, 500);
+        setSearchParams({});
+      } else {
+        toast.warning(`Réservation #${focusParam} non trouvée`);
+        setSearchParams({});
+      }
+    }
+  }, [focusParam, reservations, setSearchParams]);
+
+  // ===== RECHERCHE PAR NOM (depuis AdminMatriculesClients) =====
+  useEffect(() => {
+    if (searchParam) {
+      setSearch(searchParam);
+      setCurrentPage(1);
+      // Optionnel : on peut garder le paramètre pour le partage, ou l'effacer
+      // setSearchParams({});
+    }
+  }, [searchParam, setSearchParams]);
 
   // ===== Handle contract opening from navigation =====
   const lastProcessedContractId = useRef(null);
@@ -2335,7 +2360,6 @@ export default function AdminReservations() {
       toast.success("Réservation créée avec succès!");
       await dispatch(fetchReservations(true));
       await dispatch(refreshMatricules(true));
-      // Fermer le formulaire et ouvrir le contrat
       setShowReservationForm(false);
       setSelectedContractReservation(reservation);
       setShowContract(true);
@@ -2709,7 +2733,7 @@ export default function AdminReservations() {
     }, 200);
   };
 
-  // ===== generateContractPDF for the list (standalone) – updated with fitted scaling and reception_notes =====
+  // ===== generateContractPDF for the list (standalone) =====
   const generateContractPDF = async (reservation, includeSignatures = false) => {
     try {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
@@ -3134,7 +3158,7 @@ export default function AdminReservations() {
                       const isExpanded = expandedRowId === r.id;
                       return (
                         <Fragment key={r.id}>
-                          <tr>
+                          <tr id={`reservation-${r.id}`}>
                             <td>
                               <div className="flex items-center gap-1">
                                 <User size={14} />
@@ -3267,27 +3291,26 @@ export default function AdminReservations() {
                               )}
                             </td>
                             <td className="text-right">
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '4px', justifyContent: 'end' }}>
-    {(r.status === "confirmed" || r.status === "retard") && (
-      <button onClick={() => setStatus(r.id, "completed")} className="action-btn action-btn-primary" title="Terminer"><CheckCircle size={16} /></button>
-    )}
-    <button onClick={() => handleSignatureLink(r)} className="action-btn action-btn-link" title="Copier le lien de signature"><Link2 size={16} /></button>
-    <button onClick={() => handleViewContract(r)} className="action-btn action-btn-info" title="Voir contrat"><FileText size={16} /></button>
-    <button onClick={() => handlePrintClick(r)} className="action-btn action-btn-print" title="Imprimer"><Printer size={16} /></button>
-    <button onClick={() => handleWhatsApp(r)} className="action-btn action-btn-whatsapp" title="Envoyer un message WhatsApp"><MessageCircle size={16} /></button>
-    <button onClick={() => handleEdit(r)} className="action-btn action-btn-edit" title="Modifier"><Edit size={16} /></button>
-    <button onClick={() => setExpandedRowId(isExpanded ? null : r.id)} className="action-btn action-btn-view" title="Détails">
-      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-    </button>
-    <button onClick={() => handleDeleteClick(r)} className="action-btn action-btn-delete" title="Supprimer"><Trash2 size={16} /></button>
-  </div>
-</td>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '4px', justifyContent: 'end' }}>
+                                {(r.status === "confirmed" || r.status === "retard") && (
+                                  <button onClick={() => setStatus(r.id, "completed")} className="action-btn action-btn-primary" title="Terminer"><CheckCircle size={16} /></button>
+                                )}
+                                <button onClick={() => handleSignatureLink(r)} className="action-btn action-btn-link" title="Copier le lien de signature"><Link2 size={16} /></button>
+                                <button onClick={() => handleViewContract(r)} className="action-btn action-btn-info" title="Voir contrat"><FileText size={16} /></button>
+                                <button onClick={() => handlePrintClick(r)} className="action-btn action-btn-print" title="Imprimer"><Printer size={16} /></button>
+                                <button onClick={() => handleWhatsApp(r)} className="action-btn action-btn-whatsapp" title="Envoyer un message WhatsApp"><MessageCircle size={16} /></button>
+                                <button onClick={() => handleEdit(r)} className="action-btn action-btn-edit" title="Modifier"><Edit size={16} /></button>
+                                <button onClick={() => setExpandedRowId(isExpanded ? null : r.id)} className="action-btn action-btn-view" title="Détails">
+                                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </button>
+                                <button onClick={() => handleDeleteClick(r)} className="action-btn action-btn-delete" title="Supprimer"><Trash2 size={16} /></button>
+                              </div>
+                            </td>
                           </tr>
                           {isExpanded && (
                             <tr>
                               <td colSpan="10" style={{ padding: 0, background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)', borderBottom: '1px solid #e2e8f0' }}>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '18px 24px 22px', alignItems: 'stretch' }}>
-                                  {/* Paiement */}
                                   <div style={{ minWidth: '230px', flex: '1 1 230px', background: '#ffffff', borderRadius: '12px', borderLeft: '4px solid #06b6d4', boxShadow: '0 1px 4px rgba(15, 23, 42, 0.06)', padding: '14px 16px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.75rem', color: '#0891b2', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                       <DollarSign size={14} /> Paiement
@@ -3307,7 +3330,6 @@ export default function AdminReservations() {
                                       </div>
                                     </div>
                                   </div>
-                                  {/* Historique des paiements */}
                                   {rowPaymentHistory.length > 0 && (
                                     <div style={{ minWidth: '260px', flex: '1 1 260px', background: '#ffffff', borderRadius: '12px', borderLeft: '4px solid #8b5cf6', boxShadow: '0 1px 4px rgba(15, 23, 42, 0.06)', padding: '14px 16px' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.75rem', color: '#7c3aed', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -3325,7 +3347,6 @@ export default function AdminReservations() {
                                       </div>
                                     </div>
                                   )}
-                                  {/* Prolongation */}
                                   <div style={{ minWidth: '230px', flex: '1 1 230px', background: '#ffffff', borderRadius: '12px', borderLeft: r.can_extend_days && r.prolongation_days > 0 ? '4px solid #f59e0b' : '4px solid #cbd5e1', boxShadow: '0 1px 4px rgba(15, 23, 42, 0.06)', padding: '14px 16px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.75rem', color: '#b45309', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                       <Tag size={14} /> Prolongation

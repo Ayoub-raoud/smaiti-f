@@ -28,9 +28,10 @@ export default function AdminMatricules() {
   const reservations = useSelector(selectReservations);
   const clients = useSelector(selectClients);
 
-  // URL search params for filtering
+  // URL search params for filtering and focus
   const [searchParams, setSearchParams] = useSearchParams();
   const filterParam = searchParams.get('filter');
+  const focusId = searchParams.get('focus');
 
   // UI state
   const [showMatriculeForm, setShowMatriculeForm] = useState(false);
@@ -89,7 +90,7 @@ export default function AdminMatricules() {
   const [additionalItemType, setAdditionalItemType] = useState('quantity');
   const [additionalItemNotes, setAdditionalItemNotes] = useState('');
 
-const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   // Car search state for the form
   const [carSearchTerm, setCarSearchTerm] = useState("");
   const [selectedCar, setSelectedCar] = useState(null);
@@ -112,6 +113,28 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
     loadData();
     dispatch(fetchReservations());
   }, [dispatch]);
+
+  // ===== FOCUS FROM URL PARAMETER =====
+  useEffect(() => {
+    if (focusId && matricules.length > 0) {
+      const found = matricules.find(m => m.id === parseInt(focusId));
+      if (found) {
+        // Filtrer par recherche sur la plaque ou l'ID
+        setSearchTerm(found.matricule_code);
+        setCurrentPage(1);
+        
+        // Ouvrir les détails du matricule
+        setSelectedMatricule(found);
+        setShowMatriculeDetails(true);
+        
+        // Nettoyer l'URL
+        setSearchParams({});
+      } else {
+        toast.warning(`Matricule #${focusId} non trouvé`);
+        setSearchParams({});
+      }
+    }
+  }, [focusId, matricules, setSearchParams]);
 
   const loadData = async () => {
     await Promise.all([
@@ -345,10 +368,10 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // ==================== HELPERS ====================
   const statusConfig = {
-  active: { label: "Actif", bg: "badge-success", icon: CheckCircle },
-  inactive: { label: "Inactif", bg: "badge-danger", icon: XCircle },
-  sold: { label: "Vendu", bg: "badge-sold", icon: AlertCircle },   // NEW
-};
+    active: { label: "Actif", bg: "badge-success", icon: CheckCircle },
+    inactive: { label: "Inactif", bg: "badge-danger", icon: XCircle },
+    sold: { label: "Vendu", bg: "badge-sold", icon: AlertCircle },
+  };
 
   const formatDate = (dateString) => {
     if (!dateString) return "—";
@@ -1883,7 +1906,7 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
             </div>
           </div>
 
-          {/* FILTER INDICATOR - Added here */}
+          {/* FILTER INDICATOR */}
           {filterParam === 'notifications' && (
             <div className="filter-indicator">
               <span className="filter-indicator-text">🔔 Affichage des notifications uniquement</span>
@@ -1924,7 +1947,7 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
                     const techStatus = getDateStatusInfo(mat.visit_tech);
 
                     return (
-                      <tr key={mat.id}>
+                      <tr key={mat.id} id={`matricule-${mat.id}`}>
                         <td className="font-medium">#{mat.id}</td>
                         <td className="matricule-code-cell">{mat.matricule_code}</td>
                         <td>{car ? `${car.brand} ${car.model}` : "—"}</td>
@@ -1954,15 +1977,15 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
               </table>
             </div>
             {totalPages > 1 && (
-  <PaginationControls
-    currentPage={currentPage}
-    totalPages={totalPages}
-    onPageChange={setCurrentPage}
-    itemsPerPage={itemsPerPage}
-    onItemsPerPageChange={setItemsPerPage}
-    totalItems={filteredMatricules.length}
-  />
-)}
+              <PaginationControls
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                onItemsPerPageChange={setItemsPerPage}
+                totalItems={filteredMatricules.length}
+              />
+            )}
           </div>
 
           {/* Delete Confirmation Modal */}
@@ -2141,6 +2164,7 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
         .badge-success { background: #dcfce7; color: #166534; }
         .badge-danger { background: #fee2e2; color: #991b1b; }
         .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-sold { background: #fef3c7; color: #92400e; }
 
         /* Admin Container */
         .admin-container { max-width: 1400px; padding: 1.5rem; margin: 0 auto; }
@@ -2301,66 +2325,57 @@ const [itemsPerPage, setItemsPerPage] = useState(10);
 
         /* Dark mode */
         @media (prefers-color-scheme: dark) {
-            body { background: #0f172a; }
-            .stat-card, .table-wrapper, .search-wrapper, .modal, .inline-form-container, .inline-details-container, .maintenance-card, .detail-card, .history-modal { background: #1e293b; border-color: #334155; }
-            .stat-label, .table-info-text, .table th, .subtitle, .delete-message, .info-label, .progress-text, .progress-legend, .empty-history, .empty-state-small { color: #94a3b8; }
-            .title { background: linear-gradient(135deg, #f1f5f9, #94a3b8); background-clip: text; -webkit-background-clip: text; }
-            .btn-secondary, .btn-secondary-full, .back-btn { background: #334155; color: #e2e8f0; }
-            .btn-secondary:hover, .btn-secondary-full:hover, .back-btn:hover { background: #475569; }
-            .search-input, .filter-select, .inline-input, .inline-select, .small-input, .form-input, .form-select, .inline-textarea { background: #0f172a; border-color: #334155; color: #f1f5f9; }
-            .inline-section, .progress-section, .additional-form { background: #0f172a; border-color: #334155; }
-            .inline-section-header h3, .inline-info-item .info-value, .matricule-code, .maintenance-title { color: #f1f5f9; }
-            .table tr:hover { background: #334155; }
-            .page-btn { background: #1e293b; border-color: #475569; color: #e2e8f0; }
-            .page-btn.active { background: #f59e0b; color: #0f172a; }
-            .badge-success { background: #14532d; color: #4ade80; }
-            .badge-danger { background: #7f1d1d; color: #fca5a5; }
-            .badge-warning { background: #78350f; color: #fde68a; }
-            .date-expired { background: #7f1d1d; color: #fca5a5; }
-            .date-soon { background: #78350f; color: #fbbf24; }
-            .date-ok { background: #14532d; color: #4ade80; }
-            .action-btn-view:hover { background: #1e3a5f; }
-            .action-btn-edit:hover { background: #064e3b; }
-            .action-btn-accident:hover { background: #78350f; }
-            .action-btn-delete:hover { background: #7f1d1d; }
-            .status-success { background: #14532d; color: #4ade80; }
-            .status-warning { background: #78350f; color: #fde68a; }
-            .detail-card-title { background: #0f172a; }
-            .info-row { border-bottom-color: #334155; }
-            .history-modal-header { border-bottom-color: #334155; }
-            .history-table th, .history-table td { border-bottom-color: #334155; color: #e2e8f0; }
-            .progress-section { background: #0f172a; }
-            .progress-bar-container { background: #334155; }
-            .action-btn-small.secondary { background: #334155; color: #e2e8f0; }
-            .additional-item-card { border-color: #334155; }
-            .sortable-header:hover { background-color: #334155; }
-            .inline-details-footer { background: #0f172a; border-color: #334155; }
-            .inline-secondary-btn { background: #1e293b; color: #e2e8f0; border-color: #334155; }
-            .inline-search-section { background: #0f172a; border-color: #334155; }
-            .inline-result-item { border-bottom-color: #334155; }
-            .inline-result-item:hover { background: #334155; }
-            .inline-selected { background: #334155; color: #e2e8f0; }
-            .inline-selected strong { color: #eab308; }
-            .inline-selected p { color: #f1f5f9; }
-            .inline-no-results { color: #94a3b8; }
-            .clear-search-btn { color: #94a3b8; }
-            .clear-search-btn:hover { color: #ef4444; }
-            .filter-indicator { background: #78350f; border-color: #f59e0b; }
-            .filter-indicator-text { color: #fde68a; }
-            .clear-filter-btn { border-color: #fde68a; color: #fde68a; }
-            .clear-filter-btn:hover { background: #fde68a; color: #1e293b; }
+          body { background: #0f172a; }
+          .stat-card, .table-wrapper, .search-wrapper, .modal, .inline-form-container, .inline-details-container, .maintenance-card, .detail-card, .history-modal { background: #1e293b; border-color: #334155; }
+          .stat-label, .table-info-text, .table th, .subtitle, .delete-message, .info-label, .progress-text, .progress-legend, .empty-history, .empty-state-small { color: #94a3b8; }
+          .title { background: linear-gradient(135deg, #f1f5f9, #94a3b8); background-clip: text; -webkit-background-clip: text; }
+          .btn-secondary, .btn-secondary-full, .back-btn { background: #334155; color: #e2e8f0; }
+          .btn-secondary:hover, .btn-secondary-full:hover, .back-btn:hover { background: #475569; }
+          .search-input, .filter-select, .inline-input, .inline-select, .small-input, .form-input, .form-select, .inline-textarea { background: #0f172a; border-color: #334155; color: #f1f5f9; }
+          .inline-section, .progress-section, .additional-form { background: #0f172a; border-color: #334155; }
+          .inline-section-header h3, .inline-info-item .info-value, .matricule-code, .maintenance-title { color: #f1f5f9; }
+          .table tr:hover { background: #334155; }
+          .page-btn { background: #1e293b; border-color: #475569; color: #e2e8f0; }
+          .page-btn.active { background: #f59e0b; color: #0f172a; }
+          .badge-success { background: #14532d; color: #4ade80; }
+          .badge-danger { background: #7f1d1d; color: #fca5a5; }
+          .badge-warning { background: #78350f; color: #fde68a; }
+          .badge-sold { background: #78350f; color: #fde68a; }
+          .date-expired { background: #7f1d1d; color: #fca5a5; }
+          .date-soon { background: #78350f; color: #fbbf24; }
+          .date-ok { background: #14532d; color: #4ade80; }
+          .action-btn-view:hover { background: #1e3a5f; }
+          .action-btn-edit:hover { background: #064e3b; }
+          .action-btn-accident:hover { background: #78350f; }
+          .action-btn-delete:hover { background: #7f1d1d; }
+          .status-success { background: #14532d; color: #4ade80; }
+          .status-warning { background: #78350f; color: #fde68a; }
+          .detail-card-title { background: #0f172a; }
+          .info-row { border-bottom-color: #334155; }
+          .history-modal-header { border-bottom-color: #334155; }
+          .history-table th, .history-table td { border-bottom-color: #334155; color: #e2e8f0; }
+          .progress-section { background: #0f172a; }
+          .progress-bar-container { background: #334155; }
+          .action-btn-small.secondary { background: #334155; color: #e2e8f0; }
+          .additional-item-card { border-color: #334155; }
+          .sortable-header:hover { background-color: #334155; }
+          .inline-details-footer { background: #0f172a; border-color: #334155; }
+          .inline-secondary-btn { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+          .inline-search-section { background: #0f172a; border-color: #334155; }
+          .inline-result-item { border-bottom-color: #334155; }
+          .inline-result-item:hover { background: #334155; }
+          .inline-selected { background: #334155; color: #e2e8f0; }
+          .inline-selected strong { color: #eab308; }
+          .inline-selected p { color: #f1f5f9; }
+          .inline-no-results { color: #94a3b8; }
+          .clear-search-btn { color: #94a3b8; }
+          .clear-search-btn:hover { color: #ef4444; }
+          .filter-indicator { background: #78350f; border-color: #f59e0b; }
+          .filter-indicator-text { color: #fde68a; }
+          .clear-filter-btn { border-color: #fde68a; color: #fde68a; }
+          .clear-filter-btn:hover { background: #fde68a; color: #1e293b; }
         }
-/* Light mode */
-.badge-sold {
-  background: #fef3c7;
-  color: #92400e;
-}
 
-/* Dark mode (inside @media (prefers-color-scheme: dark) block) */
-.badge-sold {
-  background: #78350f;
-  color: #fde68a;
-}
         /* Fix horizontal overflow */
         html, body { overflow-x: auto !important; min-width: 320px; }
         .admin-container, .inline-form-container, .inline-details-container { overflow-x: auto !important; min-width: 0; width: 100%; }

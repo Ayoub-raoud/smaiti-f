@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   Search, RefreshCw, Tag, Car, User, Users, Clock, CalendarDays,
   DollarSign, Wallet, ArrowUpDown, ArrowUp, ArrowDown, X,
-  ExternalLink, History, CheckCircle2, UserX, Receipt
+  ExternalLink, History, CheckCircle2, UserX, Receipt, Calendar
 } from "lucide-react";
 
 export default function AdminMatriculesClients() {
@@ -59,12 +59,19 @@ export default function AdminMatriculesClients() {
       .filter(r => !['pending', 'cancelled', 'contacted'].includes(r.status));
 
   const getCurrentReservation = (matId) => {
+    const allRes = getMatriculeReservations(matId);
+    // 1) Priorité aux 'retard' (toujours considéré comme actuel)
+    const retard = allRes.filter(r => r.status === 'retard');
+    if (retard.length > 0) {
+      return retard.sort((a, b) => new Date(b.start_date) - new Date(a.start_date))[0];
+    }
+    // 2) Sinon les 'confirmed' avec end_date >= aujourd'hui
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return getMatriculeReservations(matId)
-      .filter(r => ['confirmed', 'retard'].includes(r.status))
-      .filter(r => r.end_date && new Date(r.end_date) >= today)
-      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0] || null;
+    const confirmed = allRes
+      .filter(r => r.status === 'confirmed' && r.end_date && new Date(r.end_date) >= today)
+      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+    return confirmed.length > 0 ? confirmed[0] : null;
   };
 
   const getLastReservation = (matId) => {
@@ -133,7 +140,10 @@ export default function AdminMatriculesClients() {
     const client = dispRes ? clients.find(c => c.id === dispRes.client_id) : null;
     const duration = dispRes ? calcDurationDays(dispRes.start_date, dispRes.end_date) : null;
     const totalRestantForClient = getTotalRemainingForClient(mat.id, client?.id);
-    return { mat, car, dispRes, isCurrent, client, duration, totalRestantForClient };
+    const period = dispRes
+      ? `${formatDate(dispRes.start_date)} → ${formatDate(dispRes.end_date)}`
+      : '—';
+    return { mat, car, dispRes, isCurrent, client, duration, totalRestantForClient, period };
   });
 
   const filteredList = enriched.filter(({ mat, car, client, isCurrent }) => {
@@ -199,10 +209,24 @@ export default function AdminMatriculesClients() {
     totalDue: enriched.reduce((sum, e) => sum + getTotalRemainingForClient(e.mat.id, e.client?.id), 0)
   };
 
-  // ==================== ACTIONS ====================
+  // ==================== ACTIONS (navigation avec paramètres URL) ====================
   const handleOpenHistory = (mat) => setHistoryMatricule(mat);
   const handleCloseHistory = () => setHistoryMatricule(null);
-  const handleGoToMatricule = () => navigate('/matricules');
+
+  // Navigue vers la page des matricules avec focus sur l'ID
+  const handleGoToMatricule = (matriculeId) => {
+    navigate(`/matricules?focus=${matriculeId}`);
+  };
+
+  // Navigue vers la page des réservations avec focus sur l'ID
+  const handleGoToReservation = (reservationId, clientName) => {
+  if (!reservationId) return;
+  if (clientName) {
+    navigate(`/reservations?search=${encodeURIComponent(clientName)}`);
+  } else {
+    navigate(`/reservations?focus=${reservationId}`);
+  }
+};
 
   if (loading) return (
     <div className="loading">
@@ -296,6 +320,7 @@ export default function AdminMatriculesClients() {
                   <th onClick={() => handleSort("matricule")} className="sortable-header">Plaque {getSortIcon("matricule")}</th>
                   <th onClick={() => handleSort("car")} className="sortable-header">Véhicule associé {getSortIcon("car")}</th>
                   <th onClick={() => handleSort("client")} className="sortable-header">Client {getSortIcon("client")}</th>
+                  <th className="sortable-header">Période</th>
                   <th onClick={() => handleSort("duration")} className="sortable-header">Durée {getSortIcon("duration")}</th>
                   <th onClick={() => handleSort("total")} className="sortable-header">Total {getSortIcon("total")}</th>
                   <th onClick={() => handleSort("paid")} className="sortable-header">Payé {getSortIcon("paid")}</th>
@@ -306,9 +331,9 @@ export default function AdminMatriculesClients() {
               </thead>
               <tbody>
                 {paginated.length === 0 ? (
-                  <tr><td colSpan="9" className="text-center py-12">Aucun matricule trouvé</td></tr>
+                  <tr><td colSpan="10" className="text-center py-12">Aucun matricule trouvé</td></tr>
                 ) : (
-                  paginated.map(({ mat, car, dispRes, isCurrent, client, duration, totalRestantForClient }) => (
+                  paginated.map(({ mat, car, dispRes, isCurrent, client, duration, totalRestantForClient, period }) => (
                     <tr key={mat.id}>
                       <td className="font-medium font-mono">{mat.matricule_code}</td>
                       <td>
@@ -329,6 +354,14 @@ export default function AdminMatriculesClients() {
                         ) : (
                           <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Aucun client</span>
                         )}
+                      </td>
+                      <td>
+                        {dispRes ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}>
+                            <Calendar size={12} style={{ color: '#64748b' }} />
+                            <span>{period}</span>
+                          </div>
+                        ) : '—'}
                       </td>
                       <td>
                         {duration ? (
@@ -375,8 +408,21 @@ export default function AdminMatriculesClients() {
                           <button className="action-btn action-btn-info" onClick={() => handleOpenHistory(mat)} title="Historique des réservations">
                             <History size={16} />
                           </button>
-                          <button className="action-btn action-btn-primary" onClick={handleGoToMatricule} title="Ouvrir la fiche matricule">
-                            <ExternalLink size={16} />
+                          {dispRes && (
+                            <button
+  className="action-btn action-btn-primary"
+  onClick={() => handleGoToReservation(dispRes.id, client ? `${client.prenom} ${client.nom}` : null)}
+  title="Voir la réservation"
+>
+  <ExternalLink size={16} />
+</button>
+                          )}
+                          <button
+                            className="action-btn action-btn-success"
+                            onClick={() => handleGoToMatricule(mat.id)}
+                            title="Ouvrir la fiche matricule"
+                          >
+                            <Car size={16} />
                           </button>
                         </div>
                       </td>
@@ -522,12 +568,11 @@ export default function AdminMatriculesClients() {
         .table-info-text { font-size: 0.875rem; color: #64748b; }
 
         .table-wrapper { background: white; border: 1px solid #e2e8f0; border-radius: 1rem; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .table { width: 100%; font-size: 0.875rem; border-collapse: collapse; min-width: 900px; }
+        .table { width: 100%; font-size: 0.875rem; border-collapse: collapse; min-width: 1100px; }
         .table th { text-align: left; padding: 0.75rem 1rem; background: #f8fafc; color: #64748b; font-weight: 500; white-space: nowrap; }
         .table td { padding: 0.75rem 1rem; border-top: 1px solid #e2e8f0; vertical-align: middle; }
         .table tr:hover { background: #f8fafc; }
 
-        /* History modal table: no forced min-width, wraps instead of scrolling */
         .history-table { min-width: 0; width: 100%; table-layout: fixed; }
         .history-table th, .history-table td { white-space: normal; word-break: break-word; padding: 0.6rem 0.6rem; font-size: 0.8rem; }
 
@@ -553,6 +598,8 @@ export default function AdminMatriculesClients() {
         .action-btn-info:hover { background: #eff6ff; }
         .action-btn-primary { color: #eab308; }
         .action-btn-primary:hover { background: #fefce8; }
+        .action-btn-success { color: #16a34a; }
+        .action-btn-success:hover { background: #ecfdf5; }
 
         .modal-overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; animation: fadeIn 0.2s ease; }
         .modals { background: white; border-radius: 1.5rem; width: 100%; max-height: 90vh; overflow-y: auto; overflow-x: hidden; animation: slideUp 0.3s ease; }
@@ -602,6 +649,7 @@ export default function AdminMatriculesClients() {
           .modal-close { background: #334155; color: #f1f5f9; }
           .action-btn-info:hover { background: #1e3a5f; }
           .action-btn-primary:hover { background: #334155; }
+          .action-btn-success:hover { background: #064e3b; }
           .vehicle-info-cell { background: #1e293b; border-left-color: #fbbf24; }
           .vehicle-model { color: #f1f5f9; }
         }

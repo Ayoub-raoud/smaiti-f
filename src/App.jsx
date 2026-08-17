@@ -1,5 +1,5 @@
 // src/App.jsx
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useEffect } from 'react';
 import { Toaster } from 'sonner';
@@ -79,6 +79,40 @@ const TitleUpdater = () => {
   return null;
 };
 
+// ---- NEW: Keyboard shortcut component (must be inside <Router>) ----
+const KeyboardShortcut = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let keyBuffer = '';
+    const secretCode = 'smaiticar';
+
+    const handleKeyDown = (e) => {
+      // Ignore key events inside input/textarea
+      const activeTag = document.activeElement?.tagName.toLowerCase() || '';
+      if (activeTag === 'input' || activeTag === 'textarea') {
+        return;
+      }
+
+      keyBuffer += e.key.toLowerCase();
+      if (keyBuffer.length > secretCode.length) {
+        keyBuffer = keyBuffer.slice(-secretCode.length);
+      }
+
+      if (keyBuffer === secretCode) {
+        keyBuffer = '';
+        navigate('/admin');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
+
+  return null;
+};
+// ---------------------------------------------------------------
+
 // Protected Route – checks authentication + role + page permissions
 const ProtectedRoute = ({ children, pageSlug }) => {
   const isAuthenticated = useSelector(selectIsAuthenticated);
@@ -142,6 +176,7 @@ function App() {
   return (
     <BrowserRouter>
       <TitleUpdater />
+      <KeyboardShortcut />   {/* ✅ Now inside the router context */}
 
       <Routes>
         {/* Public routes */}

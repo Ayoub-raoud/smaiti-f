@@ -169,7 +169,7 @@ const ContractLocation = ({
   currentUser,
   displayOptions = {},
   clients = [],
-  containerId = "contract-print"
+  containerId = "contract-print-hidden"
 }) => {
   const storedSignatures = reservation?.signatures || { agent: "", locataire: "", secondConducteur: "" };
   const [signatures, setSignatures] = useState(storedSignatures);
@@ -281,6 +281,18 @@ const ContractLocation = ({
   };
 
   const locataireSignature = signatures.locataire_image || signatures.locataire || '';
+
+  // ===== READ reception_notes from reservation (JSON) =====
+  let receptionNotes = {};
+  if (reservation?.reception_notes) {
+    try {
+      receptionNotes = JSON.parse(reservation.reception_notes);
+    } catch (e) {
+      receptionNotes = {};
+    }
+  }
+  const livrePar = receptionNotes.livre_par || currentUserName;
+  const receptionnePar = receptionNotes.receptionne_par || reservationCreatorName;
 
   return (
     <div className="contract-container-print" id={containerId}>
@@ -415,14 +427,31 @@ const ContractLocation = ({
                 <div className="section-content">
                   <div className="field-row"><span className="field-label">Départ :</span><span className="field-value">{getDisplayValue(datesOption, `${formatDate(reservation?.start_date)} à ${reservation?.start_time || "08:00"}`)}</span></div>
                   <div className="field-row"><span className="field-label">Retour :</span><span className="field-value">{getDisplayValue(datesOption, `${formatDate(reservation?.end_date)} à ${reservation?.end_time || "18:00"}`)}</span></div>
-                  <div className="field-row"><span className="field-label">Durée :</span><span className="field-value">{getDisplayValue(rentalDaysOption, `${calculateRentalDays()} jours`)}</span></div>
+                  {/* ===== ENHANCED DURÉE with prolongation ===== */}
+                  <div className="field-row">
+                    <span className="field-label">Durée :</span>
+                    <span className="field-value">
+                      {getDisplayValue(rentalDaysOption, 
+                        `${calculateRentalDays()} jours` + 
+                        (reservation.prolongation_days > 0 ? ` (dont prolongation: ${reservation.prolongation_days} jours)` : '')
+                      )}
+                    </span>
+                  </div>
+                  {reservation.prolongation_days > 0 && (
+                    <div className="field-row">
+                      <span className="field-label">Prolongation :</span>
+                      <span className="field-value">{reservation.prolongation_days} jours</span>
+                    </div>
+                  )}
+                  {/* ============================================= */}
                   <div className="field-row"><span className="field-label">Km départ :</span><span className="field-value">{getDisplayValue(kilometrageOption, `${reservation?.kilometrage_sortie || "—"} km`)}</span></div>
                   <div className="field-row">
                     <span className="field-label">Km retour :</span>
                     <span className="field-value">{getDisplayValue(kilometrageOption, reservation?.kilometrage_entree ? `${reservation.kilometrage_entree} km` : "—")}</span>
                   </div>
-                  <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, currentUserName)}</span></div>
-                  <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, reservationCreatorName)}</span></div>
+                  {/* ===== USE livré par / reçu par from reception_notes ===== */}
+                  <div className="field-row"><span className="field-label">Livré par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, livrePar)}</span></div>
+                  <div className="field-row"><span className="field-label">Reçu par :</span><span className="field-value">{getDisplayValue(deliveryReceptionOption, receptionnePar)}</span></div>
                 </div>
               </div>
 
@@ -1233,27 +1262,34 @@ const ReservationForm = ({
   // =============== MODIFICATION : Heures auto uniquement sur changement de statut (pas au premier rendu) ===============
   const isFirstRender = useRef(true);
 
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    const now = new Date();
-    const currentDate = now.toISOString().split('T')[0];
-    const currentTime = now.toTimeString().slice(0, 5);
+useEffect(() => {
+  // Ignorer le premier rendu
+  if (isFirstRender.current) {
+    isFirstRender.current = false;
+    return;
+  }
 
-    if (formData.status === 'confirmed') {
-      setFormData(prev => ({ ...prev, start_time: currentTime }));
-    }
+  // Si on est en train d'éditer une réservation, ne pas modifier les heures
+  if (editingReservation) {
+    return;
+  }
 
-    if (formData.status === 'completed') {
-      setFormData(prev => ({
-        ...prev,
-        end_date: currentDate,
-        end_time: currentTime
-      }));
-    }
-  }, [formData.status]);
+  const now = new Date();
+  const currentDate = now.toISOString().split('T')[0];
+  const currentTime = now.toTimeString().slice(0, 5);
+
+  if (formData.status === 'confirmed') {
+    setFormData(prev => ({ ...prev, start_time: currentTime }));
+  }
+
+  if (formData.status === 'completed') {
+    setFormData(prev => ({
+      ...prev,
+      end_date: currentDate,
+      end_time: currentTime
+    }));
+  }
+}, [formData.status, editingReservation]);
 
   // Charger les sous-locations quand le formulaire s'ouvre
   useEffect(() => {
@@ -1824,14 +1860,14 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
     autorisation: true
   });
   const [contractDisplayOptions, setContractDisplayOptions] = useState({
-    prices: "show",
+    prices: "dash",
     clientInfo: "show",
     secondDriver: "show",
     vehicleInfo: "show",
     deliveryReception: "show",
     rentalDates: "show",
     kilometrage: "show",
-    rentalDays: "show",
+    rentalDays: "dash",
     observations: "show",
     insurance: "show",
     depositGuarantee: "show",
@@ -1846,14 +1882,14 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   };
   const handleResetAllOptions = () => {
     setContractDisplayOptions({
-      prices: "show",
+      prices: "dash",
       clientInfo: "show",
       secondDriver: "show",
       vehicleInfo: "show",
       deliveryReception: "show",
       rentalDates: "show",
       kilometrage: "show",
-      rentalDays: "show",
+      rentalDays: "dash",
       observations: "show",
       insurance: "show",
       depositGuarantee: "show",
