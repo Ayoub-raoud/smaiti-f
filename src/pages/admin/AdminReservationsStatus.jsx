@@ -23,7 +23,7 @@ import {
   Image as ImageIcon, FileImage, Trash, Copy, CheckCircle, Gauge,
   Settings, EyeOff, Minus, Shield, Truck, FileCheck, PenTool, Building2,
   CreditCard as CreditCardIcon, CalendarRange, Fuel, Navigation, Upload,
-  AlertTriangle, XCircle, Sparkles, Star, Heart, Award, Gem, Tag,Home,Coins,
+  AlertTriangle, XCircle, Sparkles, Star, Heart, Award, Gem, Tag, Home, Coins,
   Wrench, Key, Briefcase, ArrowUpDown, ArrowUp, ArrowDown,
   MessageCircle, Link2
 } from "lucide-react";
@@ -32,6 +32,39 @@ import html2canvas from "html2canvas";
 import checklistImage from "../../assets/checklist.png";
 import logoImage from "../../assets/logo.png";
 import agentSignatureImage from "../../assets/cache.png";
+
+// ========== HELPER FUNCTIONS (same as AdminReservations) ==========
+const getUserDisplayName = (user) => {
+  if (!user) return "—";
+  return user.Fullname || user.fullname || user.name || user.username || "—";
+};
+
+const buildReceptionNotesJSON = (reservation, currentUser) => {
+  return JSON.stringify({
+    livre_par: getUserDisplayName(currentUser),
+    receptionne_par: reservation?.created_by || "—"
+  });
+};
+
+const addImageFittedToPage = (doc, imgData, canvas, margin = 10) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const availableWidth = pageWidth - margin * 2;
+  const availableHeight = pageHeight - margin * 2;
+
+  let imgWidth = availableWidth;
+  let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  if (imgHeight > availableHeight) {
+    imgHeight = availableHeight;
+    imgWidth = (canvas.width * imgHeight) / canvas.height;
+  }
+
+  const xOffset = margin + (availableWidth - imgWidth) / 2;
+  const yOffset = margin + (availableHeight - imgHeight) / 2;
+
+  doc.addImage(imgData, "PNG", xOffset, yOffset, imgWidth, imgHeight);
+};
 
 const downloadAndOpenPDF = (doc, filename) => {
   const pdfBlob = doc.output('blob');
@@ -162,7 +195,7 @@ const SignatureBlock = ({ label, signature = "", option }) => {
   );
 };
 
-// ==================== ContractLocation ====================
+// ==================== ContractLocation (enhanced with prolongation) ====================
 const ContractLocation = ({
   reservation,
   showSignatures = false,
@@ -993,7 +1026,6 @@ const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, 
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Guard against non-array
   const list = Array.isArray(sousLocations) ? sousLocations : [];
   const filtered = useMemo(() => {
     if (!searchTerm.trim()) return list;
@@ -1062,9 +1094,9 @@ const SousLocationSearch = ({ sousLocations, selectedId, onSelect, onCreateNew, 
   );
 };
 
-// ==================== ReservationForm (MODIFIED) ====================
+// ==================== ReservationForm ====================
 const ReservationForm = ({
-  isOpen, onClose, onSubmit, editingReservation, clients, cars, matricules, submitting
+  isOpen, onClose, onSubmit, onSubmitAndNavigate, editingReservation, clients, cars, matricules, submitting
 }) => {
   const dispatch = useDispatch();
   const user = useSelector(selectUser);
@@ -1098,7 +1130,11 @@ const ReservationForm = ({
     kilometrage_entree: "",
     sous_location_id: "",
     can_extend_days: false,
+    prolongation_days: 0,
   });
+
+  // Track the current daily rate (DH per day)
+  const [dailyRate, setDailyRate] = useState(0);
 
   const [clientSearch, setClientSearch] = useState("");
   const [isNewClient, setIsNewClient] = useState(false);
@@ -1120,10 +1156,13 @@ const ReservationForm = ({
     lieu_naissance: "", cin_delivre_le: "", permis_delivre_le: ""
   });
 
-  // Sous-location modal state
   const [showCreateSousLocationModal, setShowCreateSousLocationModal] = useState(false);
   const [newSousLocationName, setNewSousLocationName] = useState('');
   const [newSousLocationDesc, setNewSousLocationDesc] = useState('');
+
+  // Total days actually billed = base rental days + prolongation days (if enabled)
+  const totalDays = (parseInt(formData.rental_days, 10) || 0) +
+    (formData.can_extend_days ? (parseInt(formData.prolongation_days, 10) || 0) : 0);
 
   const filteredClients = useMemo(() => {
     if (!clientSearch.trim() || isNewClient || !clients || !Array.isArray(clients)) return [];
@@ -1156,29 +1195,37 @@ const ReservationForm = ({
     setFilteredMatricules(filtered);
   }, [matriculeSearch, matricules]);
 
-  // 1) Charger une réservation en édition
   useEffect(() => {
     if (editingReservation) {
       const computeRentalDays = (start, end) => {
         if (!start || !end) return 1;
         const startDate = new Date(start);
         const endDate = new Date(end);
-        startDate.setHours(0,0,0,0);
-        endDate.setHours(0,0,0,0);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(0, 0, 0, 0);
         const diffTime = Math.abs(endDate - startDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         return diffDays === 0 ? 1 : diffDays;
       };
+
+      const totalDays = 
+        editingReservation.rental_days ||
+        editingReservation.total_days ||
+        (editingReservation.start_date && editingReservation.end_date
+          ? computeRentalDays(editingReservation.start_date, editingReservation.end_date)
+          : 1);
+
+      const prolongation = editingReservation.prolongation_days || 0;
+      const baseDays = editingReservation.can_extend_days
+        ? Math.max(totalDays - prolongation, 1)
+        : totalDays;
 
       setFormData({
         start_date: editingReservation.start_date?.split("T")[0] || "",
         end_date: editingReservation.end_date?.split("T")[0] || "",
         start_time: editingReservation.start_time || "08:00",
         end_time: editingReservation.end_time || "18:00",
-        rental_days: editingReservation.rental_days || editingReservation.total_days || 
-                     (editingReservation.start_date && editingReservation.end_date 
-                       ? computeRentalDays(editingReservation.start_date, editingReservation.end_date) 
-                       : 1),
+        rental_days: baseDays,
         total_price: editingReservation.total_price || 0,
         amount_paid: editingReservation.amount_paid || 0,
         remaining_amount: editingReservation.remaining_amount || 0,
@@ -1194,33 +1241,41 @@ const ReservationForm = ({
         kilometrage_entree: editingReservation.kilometrage_entree || "",
         sous_location_id: editingReservation.sous_location_id || "",
         can_extend_days: editingReservation.can_extend_days || false,
+        prolongation_days: editingReservation.prolongation_days || 0,
       });
+
+      // Set daily rate from loaded total / days
+      if (totalDays > 0) {
+        setDailyRate(editingReservation.total_price / totalDays);
+      } else {
+        setDailyRate(0);
+      }
+
       setPaymentHistory(
         Array.isArray(editingReservation.payment_history)
           ? editingReservation.payment_history
           : []
       );
       if (editingReservation.client_id) {
-        const client = clients.find(c => c.id === editingReservation.client_id);
+        const client = clients.find((c) => c.id === editingReservation.client_id);
         if (client) {
           setSelectedClient(client);
           setClientSearch(`${client.prenom} ${client.nom}`);
         }
       }
       if (editingReservation.matricule_id) {
-        const matricule = matricules.find(m => m.id === editingReservation.matricule_id);
+        const matricule = matricules.find((m) => m.id === editingReservation.matricule_id);
         if (matricule) {
           setSelectedMatricule(matricule);
           setMatriculeSearch(matricule.matricule_code);
           if (matricule.car_id) {
-            setFormData(prev => ({ ...prev, car_id: matricule.car_id }));
+            setFormData((prev) => ({ ...prev, car_id: matricule.car_id }));
           }
         }
       }
     }
   }, [editingReservation, clients, matricules]);
 
-  // 2) Filtrer les matricules par car_id
   useEffect(() => {
     if (formData.car_id) {
       const filtered = matricules.filter(m => m.car_id == formData.car_id);
@@ -1230,7 +1285,6 @@ const ReservationForm = ({
     }
   }, [formData.car_id, matricules]);
 
-  // 3) Mettre à jour kilometrage_sortie automatiquement
   useEffect(() => {
     if (formData.matricule_id) {
       const selectedMatriculeObj = matricules.find(m => m.id == formData.matricule_id);
@@ -1240,84 +1294,90 @@ const ReservationForm = ({
     }
   }, [formData.matricule_id, matricules]);
 
-  // 4) Auto-calcul du total (uniquement en création)
+  // ============================================================
+  // When car is selected (and no manual rate set), set dailyRate from car
+  // ============================================================
   useEffect(() => {
-    if (!editingReservation && formData.car_id && formData.rental_days) {
+    if (formData.car_id && dailyRate === 0 && totalDays > 0) {
       const car = cars.find(c => c.id == formData.car_id);
       if (car) {
-        const total = car.price_per_day * formData.rental_days;
-        setFormData(prev => ({ ...prev, total_price: total }));
+        setDailyRate(car.price_per_day);
+        setFormData(prev => ({ ...prev, total_price: car.price_per_day * totalDays }));
       }
     }
-  }, [formData.car_id, formData.rental_days, cars, editingReservation]);
+  }, [formData.car_id, cars, dailyRate, totalDays]);
 
-  // 5) Mise à jour du montant restant
+  // ============================================================
+  // Recalculate total_price whenever dailyRate or totalDays changes
+  // ============================================================
   useEffect(() => {
-    const total = parseFloat(formData.total_price) || 0;
-    const paid = parseFloat(formData.amount_paid) || 0;
-    const remaining = Math.max(total - paid, 0);
-    setFormData(prev => ({ ...prev, remaining_amount: remaining }));
-  }, [formData.total_price, formData.amount_paid]);
+    if (dailyRate > 0 && totalDays > 0) {
+      setFormData(prev => ({ ...prev, total_price: dailyRate * totalDays }));
+    }
+  }, [dailyRate, totalDays]);
+  // ============================================================
 
-  // =============== MODIFICATION : Heures auto uniquement sur changement de statut (pas au premier rendu) ===============
   const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (editingReservation) {
+      return;
+    }
+    const now = new Date();
+    const currentDate = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
 
-useEffect(() => {
-  // Ignorer le premier rendu
-  if (isFirstRender.current) {
-    isFirstRender.current = false;
-    return;
-  }
+    if (formData.status === 'confirmed') {
+      setFormData(prev => ({ ...prev, start_time: currentTime }));
+    }
+    if (formData.status === 'completed') {
+      setFormData(prev => ({
+        ...prev,
+        end_date: currentDate,
+        end_time: currentTime
+      }));
+    }
+  }, [formData.status, editingReservation]);
 
-  // Si on est en train d'éditer une réservation, ne pas modifier les heures
-  if (editingReservation) {
-    return;
-  }
-
-  const now = new Date();
-  const currentDate = now.toISOString().split('T')[0];
-  const currentTime = now.toTimeString().slice(0, 5);
-
-  if (formData.status === 'confirmed') {
-    setFormData(prev => ({ ...prev, start_time: currentTime }));
-  }
-
-  if (formData.status === 'completed') {
-    setFormData(prev => ({
-      ...prev,
-      end_date: currentDate,
-      end_time: currentTime
-    }));
-  }
-}, [formData.status, editingReservation]);
-
-  // Charger les sous-locations quand le formulaire s'ouvre
   useEffect(() => {
     if (isOpen) {
       dispatch(fetchSousLocations());
     }
   }, [isOpen, dispatch]);
 
-  // ---- Gestion des dates (exclusif) ----
+  // Helper for total days
+  const computeTotalDaysFor = (rentalDaysVal, prolongationVal, canExtend) => {
+    const base = parseInt(rentalDaysVal, 10) || 0;
+    const prolongation = canExtend ? (parseInt(prolongationVal, 10) || 0) : 0;
+    return base + prolongation;
+  };
+
   const handleStartDateChange = (value) => {
-    setFormData(prev => ({ ...prev, start_date: value }));
-    if (value && formData.rental_days) {
+    setFormData(prev => {
+      const days = computeTotalDaysFor(prev.rental_days, prev.prolongation_days, prev.can_extend_days);
+      if (!value || days <= 0) return { ...prev, start_date: value };
       const start = new Date(value);
       const end = new Date(start);
-      end.setDate(start.getDate() + formData.rental_days);
-      setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
-    }
+      end.setDate(start.getDate() + days);
+      return { ...prev, start_date: value, end_date: end.toISOString().split("T")[0] };
+    });
   };
 
   const handleEndDateChange = (value) => {
-    setFormData(prev => ({ ...prev, end_date: value }));
-    if (formData.start_date && value) {
-      const start = new Date(formData.start_date);
+    setFormData(prev => {
+      if (!prev.start_date || !value) return { ...prev, end_date: value };
+      const start = new Date(prev.start_date);
       const end = new Date(value);
       const diffTime = Math.abs(end - start);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      setFormData(prev => ({ ...prev, rental_days: diffDays === 0 ? 1 : diffDays }));
-    }
+      const totalSpan = diffDays === 0 ? 1 : diffDays;
+      const prolongation = prev.can_extend_days ? (parseInt(prev.prolongation_days, 10) || 0) : 0;
+      const baseDays = Math.max(totalSpan - prolongation, 1);
+      return { ...prev, end_date: value, rental_days: baseDays };
+    });
   };
 
   const handleRentalDaysChange = (value) => {
@@ -1327,14 +1387,48 @@ useEffect(() => {
     }
     const days = parseInt(value, 10);
     if (!isNaN(days) && days >= 1) {
-      setFormData(prev => ({ ...prev, rental_days: days }));
-      if (formData.start_date) {
-        const start = new Date(formData.start_date);
+      setFormData(prev => {
+        const totalDaysNow = computeTotalDaysFor(days, prev.prolongation_days, prev.can_extend_days);
+        if (!prev.start_date || totalDaysNow <= 0) {
+          return { ...prev, rental_days: days };
+        }
+        const start = new Date(prev.start_date);
         const end = new Date(start);
-        end.setDate(start.getDate() + days);
-        setFormData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
-      }
+        end.setDate(start.getDate() + totalDaysNow);
+        return { ...prev, rental_days: days, end_date: end.toISOString().split('T')[0] };
+      });
     }
+  };
+
+  const handleProlongationToggle = (checked) => {
+    setFormData(prev => {
+      const nextProlongation = checked ? (prev.prolongation_days || 1) : 0;
+      const next = { ...prev, can_extend_days: checked, prolongation_days: nextProlongation };
+      if (prev.start_date) {
+        const totalDaysNow = computeTotalDaysFor(prev.rental_days, nextProlongation, checked);
+        const start = new Date(prev.start_date);
+        const end = new Date(start);
+        end.setDate(start.getDate() + totalDaysNow);
+        next.end_date = end.toISOString().split('T')[0];
+      }
+      return next;
+    });
+  };
+
+  const handleProlongationDaysChange = (value) => {
+    const val = parseInt(value, 10);
+    const safeVal = val > 0 ? val : 1;
+    setFormData(prev => {
+      const next = { ...prev, prolongation_days: safeVal };
+      if (prev.start_date && prev.can_extend_days) {
+        const totalDaysNow = computeTotalDaysFor(prev.rental_days, safeVal, true);
+        const start = new Date(prev.start_date);
+        const end = new Date(start);
+        end.setDate(start.getDate() + totalDaysNow);
+        next.end_date = end.toISOString().split('T')[0];
+      }
+      return next;
+    });
   };
 
   const handleClientSelect = (client) => {
@@ -1401,23 +1495,41 @@ useEffect(() => {
       toast.error("Veuillez entrer un montant valide");
       return;
     }
+    const amount = parseFloat(newPayment.amount);
+    const currentTotalPaid = paymentHistory.reduce((sum, p) => sum + p.amount, 0);
+    const maxPossible = (formData.total_price || 0) - currentTotalPaid;
+
+    if (maxPossible <= 0) {
+      toast.error("Cette réservation est déjà entièrement payée.");
+      return;
+    }
+
+    let actualAmount = amount;
+    if (actualAmount > maxPossible) {
+      actualAmount = maxPossible;
+      toast.info(`Le paiement a été ajusté à ${actualAmount} DH (reste à payer).`);
+    }
+
     const payment = {
       id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      amount: parseFloat(newPayment.amount),
+      amount: actualAmount,
       date: newPayment.date,
       method: newPayment.method,
       notes: newPayment.notes || "",
       created_at: new Date().toISOString()
     };
+
     const updatedHistory = [...paymentHistory, payment];
     setPaymentHistory(updatedHistory);
     const newAmountPaid = updatedHistory.reduce((sum, p) => sum + p.amount, 0);
     const newRemaining = (formData.total_price || 0) - newAmountPaid;
+
     setFormData(prev => ({
       ...prev,
       amount_paid: newAmountPaid,
       remaining_amount: newRemaining
     }));
+
     setNewPayment({ amount: "", date: new Date().toISOString().split("T")[0], method: "cash", notes: "" });
     setShowAddPayment(false);
     toast.success("Paiement ajouté");
@@ -1436,6 +1548,24 @@ useEffect(() => {
     toast.success("Paiement supprimé");
   };
 
+  // ============================================================
+  // RECALCULER – reset dailyRate to car.price_per_day and recompute
+  // ============================================================
+  const handleRecalculateTotal = () => {
+    const car = cars.find(c => c.id == formData.car_id);
+    if (!car) {
+      toast.warning("Veuillez d'abord sélectionner un véhicule.");
+      return;
+    }
+    if (totalDays <= 0) {
+      toast.warning("Le nombre de jours doit être supérieur à 0.");
+      return;
+    }
+    setDailyRate(car.price_per_day);
+    setFormData(prev => ({ ...prev, total_price: car.price_per_day * totalDays }));
+  };
+  // ============================================================
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     let clientId = formData.client_id;
@@ -1449,10 +1579,33 @@ useEffect(() => {
     }
     const reservationData = {
       ...formData,
+      rental_days: totalDays,
       client_id: clientId,
       payment_history: paymentHistory
     };
     onSubmit(reservationData);
+  };
+
+  const handleSubmitAndNavigate = (e) => {
+    e.preventDefault();
+    let clientId = formData.client_id;
+    if (isNewClient && !clientId) {
+      toast.error("Veuillez confirmer la création du client en cliquant sur 'Confirmer la création'");
+      return;
+    }
+    if (!clientId) {
+      toast.error("Veuillez sélectionner ou créer un client");
+      return;
+    }
+    const reservationData = {
+      ...formData,
+      rental_days: totalDays,
+      client_id: clientId,
+      payment_history: paymentHistory
+    };
+    if (onSubmitAndNavigate) {
+      onSubmitAndNavigate(reservationData);
+    }
   };
 
   if (!isOpen) return null;
@@ -1583,7 +1736,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Sous‑location & prolongation */}
             <div className="inline-section">
               <div className="inline-section-header"><Tag size={18} /><h3>Sous‑location & prolongation</h3></div>
               <div className="inline-grid-2">
@@ -1599,15 +1751,28 @@ useEffect(() => {
                 </div>
                 <div className="inline-field">
                   <label>Prolongation autorisée</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-                    <input
-                      type="checkbox"
-                      checked={formData.can_extend_days || false}
-                      onChange={(e) => setFormData({ ...formData, can_extend_days: e.target.checked })}
-                    />
-                    <span style={{ fontSize: '0.8rem', color: '#475569' }}>
-                      Le client pourra prolonger la location
-                    </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                    <label className="inline-checkbox" style={{ marginBottom: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.can_extend_days || false}
+                        onChange={(e) => handleProlongationToggle(e.target.checked)}
+                      />
+                      <span>Le client pourra prolonger la location</span>
+                    </label>
+                    {formData.can_extend_days && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 500, color: '#475569' }}>Jours à ajouter :</label>
+                        <input
+                          type="number"
+                          className="inline-input"
+                          style={{ width: '80px', padding: '0.25rem 0.5rem' }}
+                          value={formData.prolongation_days || 1}
+                          onChange={(e) => handleProlongationDaysChange(e.target.value)}
+                          min="1"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1699,7 +1864,44 @@ useEffect(() => {
             <div className="inline-section">
               <div className="inline-section-header"><DollarSign size={18} /><h3>Paiement et statut</h3></div>
               <div className="inline-grid-2">
-                <div className="inline-field"><label>Prix total (DH) *</label><input type="number" step="0.01" className="inline-input" value={formData.total_price} onChange={(e) => setFormData(prev => ({ ...prev, total_price: parseFloat(e.target.value) }))} required /></div>
+                <div className="inline-field">
+                  <label>Prix total (DH) *</label>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="inline-input"
+                      value={formData.total_price}
+                      onChange={(e) => {
+                        const newTotal = parseFloat(e.target.value) || 0;
+                        // Update daily rate based on new total and current days
+                        if (totalDays > 0) {
+                          setDailyRate(newTotal / totalDays);
+                        }
+                        setFormData(prev => ({ ...prev, total_price: newTotal }));
+                      }}
+                      required
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="inline-secondary-btn"
+                      onClick={handleRecalculateTotal}
+                      style={{
+                        padding: '0.4rem 0.8rem',
+                        fontSize: '0.75rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Recalculer le total à partir du prix journalier du véhicule"
+                      disabled={!formData.car_id}
+                    >
+                      <RefreshCw size={14} /> Recalculer
+                    </button>
+                  </div>
+                </div>
                 <div className="inline-field"><label>Montant payé (DH)</label><input type="number" step="0.01" className="inline-input" value={formData.amount_paid} readOnly style={{ backgroundColor: "#f3f4f6" }} /></div>
                 <div className="inline-field"><label>Reste à payer (DH)</label><input type="number" step="0.01" className="inline-input" value={formData.remaining_amount} readOnly style={{ backgroundColor: "#f3f4f6" }} /></div>
                 <div className="inline-field"><label>Statut</label>
@@ -1755,12 +1957,10 @@ useEffect(() => {
               <div className="inline-field">
                 <textarea className="inline-textarea" rows="3" value={formData.notes} onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))} placeholder="Notes supplémentaires..." />
               </div>
-
             </div>
           </div>
         </div>
 
-        {/* Modal de création de sous-location */}
         {showCreateSousLocationModal && (
           <div className="modal-overlay" onClick={() => setShowCreateSousLocationModal(false)}>
             <div className="modal" style={{ maxWidth: '450px' }} onClick={(e) => e.stopPropagation()}>
@@ -1836,6 +2036,22 @@ useEffect(() => {
           <button type="submit" className="inline-primary-btn" disabled={submitting}>
             {submitting ? "Traitement..." : (editingReservation ? "Mettre à jour" : "Créer la réservation")}
           </button>
+          {onSubmitAndNavigate && (
+            <button
+              type="button"
+              className="inline-primary-btn"
+              onClick={handleSubmitAndNavigate}
+              disabled={submitting}
+              style={{
+                background: '#3b82f6',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#2563eb'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#3b82f6'}
+            >
+              {submitting ? "Traitement..." : (editingReservation ? "Mettre à jour & Contrat" : "Créer & Contrat")}
+            </button>
+          )}
         </div>
       </form>
     </div>
@@ -1844,6 +2060,10 @@ useEffect(() => {
 
 // ==================== ContractViewPage ====================
 const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
+  const dispatch = useDispatch();
+
+  const [receptionNotesOverride, setReceptionNotesOverride] = useState(reservation?.reception_notes || null);
+
   const [contractSignatures, setContractSignatures] = useState({
     agent: reservation?.signatures?.agent || "",
     locataire: reservation?.signatures?.locataire || "",
@@ -1901,8 +2121,17 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   const generateContractPDF = async (includeSignatures = false) => {
     try {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+
+      const notesJSON = buildReceptionNotesJSON(reservation, currentUser);
+      try {
+        await dispatch(updateReservation({ id: reservation.id, data: { reception_notes: notesJSON } })).unwrap();
+        setReceptionNotesOverride(notesJSON);
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (e) {
+        console.error("Failed to save reception_notes", e);
+      }
+
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-      const pageWidth = doc.internal.pageSize.getWidth();
       const contractElement = document.getElementById("contract-print");
       if (!contractElement) throw new Error("Contract element not found");
       const contractClone = contractElement.cloneNode(true);
@@ -1937,9 +2166,7 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
       const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
       document.body.removeChild(contractClone);
       const imgData = canvas.toDataURL("image/png", 1.0);
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+      addImageFittedToPage(doc, imgData, canvas);
 
       const filename = `contrat-location-${reservation.id}.pdf`;
       downloadAndOpenPDF(doc, filename);
@@ -2024,7 +2251,12 @@ const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
           </div>
         </div>
         <ContractLocation
-          reservation={{ ...reservation, signatures: mergedSignatures, paperwork: contractPaperwork }}
+          reservation={{
+            ...reservation,
+            signatures: mergedSignatures,
+            paperwork: contractPaperwork,
+            reception_notes: receptionNotesOverride ?? reservation?.reception_notes
+          }}
           showSignatures={true}
           currentUser={currentUser}
           clients={clients}
@@ -2462,7 +2694,7 @@ export default function AdminReservationsStatus() {
   };
 
   const handleExport = () => {
-    const headers = ["ID", "Client", "Véhicule", "Immatriculation", "Début", "Fin", "Total (DH)", "Statut"];
+    const headers = ["ID", "Client", "Véhicule", "Immatriculation", "Début", "Fin", "Total (DH)", "Statut", "Prolongation", "Sous‑location"];
     const csvData = reservations.map(r => {
       const client = clients.find(c => c.id === r.client_id);
       const car = cars.find(c => c.id === r.car_id);
@@ -2475,7 +2707,9 @@ export default function AdminReservationsStatus() {
         r.start_date,
         r.end_date,
         r.total_price,
-        r.status
+        r.status,
+        r.can_extend_days ? "Oui" : "Non",
+        r.sous_location?.name || "",
       ].join(",");
     });
     const blob = new Blob([headers.join(",") + "\n" + csvData.join("\n")], { type: "text/csv" });
@@ -2532,8 +2766,17 @@ export default function AdminReservationsStatus() {
   const generateContractPDF = async (reservation, includeSignatures = false) => {
     try {
       toast.loading("Génération du contrat en cours...", { id: "contract-pdf" });
+
+      const notesJSON = buildReceptionNotesJSON(reservation, currentUser);
+      try {
+        await dispatch(updateReservation({ id: reservation.id, data: { reception_notes: notesJSON } })).unwrap();
+        reservation.reception_notes = notesJSON;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (e) {
+        console.error("Failed to save reception_notes", e);
+      }
+
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-      const pageWidth = doc.internal.pageSize.getWidth();
       const contractElement = document.getElementById("contract-print");
       if (!contractElement) {
         console.error("Contract element not found");
@@ -2572,9 +2815,7 @@ export default function AdminReservationsStatus() {
       const canvas = await html2canvas(contractClone, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
       document.body.removeChild(contractClone);
       const imgData = canvas.toDataURL("image/png", 1.0);
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      doc.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+      addImageFittedToPage(doc, imgData, canvas);
 
       const filename = `contrat-location-${reservation.id}.pdf`;
       downloadAndOpenPDF(doc, filename);
@@ -2900,7 +3141,7 @@ export default function AdminReservationsStatus() {
                 </thead>
                 <tbody>
                   {paginated.length === 0 ? (
-                    <tr><td colSpan="9" className="text-center py-12">Aucune réservation</td></tr>
+                    <tr><td colSpan="11" className="text-center py-12">Aucune réservation</td></tr>
                   ) : (
                     paginated.map(r => {
                       const client = clients.find(c => c.id === r.client_id);
@@ -2924,126 +3165,126 @@ export default function AdminReservationsStatus() {
                             </div>
                           </td>
                           <td>
-  <div className="vehicle-info-cell">
-    <div className="vehicle-model">
-      {car ? `${car.brand} ${car.model}` : "—"}
-    </div>
-    <div className="vehicle-matricule">
-      {mat?.matricule_code || "—"}
-      {car?.color && (
-        <span className="vehicle-color-info">
-          <span className="color-dot" style={{ backgroundColor: car.color }} title={car.color}></span>
-          <span className="color-text">{car.color}</span>
-        </span>
-      )}
-    </div>
-  </div>
-</td>
-<td>
-  <div style={{
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    fontSize: '0.75rem'
-  }}>
-    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-      <Calendar size={12} style={{ color: '#64748b' }} />
-      {new Date(r.start_date).toLocaleDateString("fr-FR")}
-    </span>
-    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0b0d0e' }}>
-      <span style={{ marginLeft: '16px' }}>→</span>
-      {new Date(r.end_date).toLocaleDateString("fr-FR")}
-    </span>
-  </div>
-</td>                          <td>
-  <span style={{
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    background: '#f1f5f9',
-    color: '#1e293b',
-    padding: '2px 8px',
-    borderRadius: '12px',
-    fontSize: '0.75rem',
-    fontWeight: '500'
-  }}>
-    <CalendarDays size={12} style={{ color: '#eab308' }} />
-    {days} {days > 1 ? 'jours' : 'jour'}
-  </span>
-</td>
+                            <div className="vehicle-info-cell">
+                              <div className="vehicle-model">
+                                {car ? `${car.brand} ${car.model}` : "—"}
+                              </div>
+                              <div className="vehicle-matricule">
+                                {mat?.matricule_code || "—"}
+                                {car?.color && (
+                                  <span className="vehicle-color-info">
+                                    <span className="color-dot" style={{ backgroundColor: car.color }} title={car.color}></span>
+                                    <span className="color-text">{car.color}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px',
+                              fontSize: '0.75rem'
+                            }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Calendar size={12} style={{ color: '#64748b' }} />
+                                {new Date(r.start_date).toLocaleDateString("fr-FR")}
+                              </span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0b0d0e' }}>
+                                <span style={{ marginLeft: '16px' }}>→</span>
+                                {new Date(r.end_date).toLocaleDateString("fr-FR")}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              background: '#f1f5f9',
+                              color: '#1e293b',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '0.75rem',
+                              fontWeight: '500'
+                            }}>
+                              <CalendarDays size={12} style={{ color: '#eab308' }} />
+                              {days} {days > 1 ? 'jours' : 'jour'}
+                            </span>
+                          </td>
                           <td className={`days-remaining-cell ${r.status === "retard" ? "late" : ""}`}>{daysRemaining}</td>
                           <td>
-  <span style={{
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    background: '#fef3c7',
-    color: '#92400e',
-    padding: '2px 10px',
-    borderRadius: '20px',
-    fontWeight: '700',
-    fontSize: '0.875rem',
-    border: '1px solid #f59e0b'
-  }}>
-    <Coins size={14} style={{ color: '#d97706' }} />
-    {r.total_price} DH
-  </span>
-</td>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              background: '#fef3c7',
+                              color: '#92400e',
+                              padding: '2px 10px',
+                              borderRadius: '20px',
+                              fontWeight: '700',
+                              fontSize: '0.875rem',
+                              border: '1px solid #f59e0b'
+                            }}>
+                              <Coins size={14} style={{ color: '#d97706' }} />
+                              {r.total_price} DH
+                            </span>
+                          </td>
                           <td>{getStatusBadge(r.status)}</td>
                           <td>
-  {r.can_extend_days ? (
-    <span className="badge" style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      background: '#dcfce7',
-      color: '#166534',
-      padding: '2px 10px',
-      borderRadius: '20px',
-      fontWeight: '600',
-      fontSize: '0.75rem'
-    }}>
-      <CheckCircle size={14} /> Oui
-    </span>
-  ) : (
-    <span className="badge" style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      background: '#f1f5f9',
-      color: '#475569',
-      padding: '2px 10px',
-      borderRadius: '20px',
-      fontWeight: '600',
-      fontSize: '0.75rem'
-    }}>
-      <XCircle size={14} /> Non
-    </span>
-  )}
-</td>
+                            {r.can_extend_days ? (
+                              <span className="badge" style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#dcfce7',
+                                color: '#166534',
+                                padding: '2px 10px',
+                                borderRadius: '20px',
+                                fontWeight: '600',
+                                fontSize: '0.75rem'
+                              }}>
+                                <CheckCircle size={14} /> Oui
+                              </span>
+                            ) : (
+                              <span className="badge" style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#f1f5f9',
+                                color: '#475569',
+                                padding: '2px 10px',
+                                borderRadius: '20px',
+                                fontWeight: '600',
+                                fontSize: '0.75rem'
+                              }}>
+                                <XCircle size={14} /> Non
+                              </span>
+                            )}
+                          </td>
                           <td>
-  {r.sous_location ? (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-      <Tag size={14} /> {r.sous_location.name}
-    </span>
-  ) : (
-    <span className="badge" style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      background: '#eab308',
-      color: '#0f172a',
-      padding: '2px 10px',
-      borderRadius: '20px',
-      fontWeight: '600',
-      fontSize: '0.75rem'
-    }}>
-      <Home size={14} /> Propre
-    </span>
-  )}
-</td>
+                            {r.sous_location ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <Tag size={14} /> {r.sous_location.name}
+                              </span>
+                            ) : (
+                              <span className="badge" style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#eab308',
+                                color: '#0f172a',
+                                padding: '2px 10px',
+                                borderRadius: '20px',
+                                fontWeight: '600',
+                                fontSize: '0.75rem'
+                              }}>
+                                <Home size={14} /> Propre
+                              </span>
+                            )}
+                          </td>
                           <td className="text-right">
-                            {/* ===== MODIFICATION : Boutons en grille 4 colonnes ===== */}
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '4px', justifyContent: 'end' }}>
                               {r.status === "pending" || r.status === "contacted" ? (
                                 <>
@@ -3469,7 +3710,7 @@ export default function AdminReservationsStatus() {
           }
         }
 
-        /* Additional styles for sous-location search */
+        /* Sous-location search styles */
         .sous-location-search {
           position: relative;
           width: 100%;
@@ -3509,110 +3750,66 @@ export default function AdminReservationsStatus() {
           color: #64748b;
           margin-bottom: 0.75rem;
         }
-          /* Style for the vehicle/matricule cell */
-.vehicle-info-cell {
-  background: #fefce8;         /* light yellow background */
-  padding: 4px 12px;
-  border-radius: 8px;
-  border-left: 4px solid #eab308; /* gold left border */
-  display: inline-block;
-  min-width: 120px;
-}
-
-.vehicle-model {
-  font-weight: 600;
-  color: #1e293b;
-  font-size: 0.875rem;
-}
-
-.vehicle-matricule {
-  font-family: 'Courier New', monospace;
-  font-weight: 700;
-  color: #b8860b;              /* gold/dark orange for matricule */
-  font-size: 0.8rem;
-  letter-spacing: 0.5px;
-}
-
-/* Dark mode overrides */
-@media (prefers-color-scheme: dark) {
-  .vehicle-info-cell {
-    background: #1e293b;       /* darker background */
-    border-left-color: #fbbf24; /* lighter gold */
-  }
-  .vehicle-model {
-    color: #f1f5f9;
-  }
-  .vehicle-matricule {
-    color: #fbbf24;
-  }
-}
-  /* Vehicle / Matricule column enhancements */
-.vehicle-info-cell {
-  background: #fefce8;
-  padding: 4px 12px;
-  border-radius: 8px;
-  border-left: 4px solid #eab308;
-  display: inline-block;
-  min-width: 120px;
-}
-
-.vehicle-model {
-  font-weight: 600;
-  color: #1e293b;
-  font-size: 0.875rem;
-}
-
-.vehicle-matricule {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-family: 'Courier New', monospace;
-  font-weight: 700;
-  color: #b8860b;
-  font-size: 0.8rem;
-  letter-spacing: 0.5px;
-}
-
-.vehicle-color-info {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.7rem;
-  font-weight: 500;
-}
-
-.color-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(0,0,0,0.15);
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-.color-text {
-  color: #475569;
-  font-weight: 400;
-  font-family: system-ui, sans-serif;
-}
-
-/* Dark mode overrides */
-@media (prefers-color-scheme: dark) {
-  .vehicle-info-cell {
-    background: #1e293b;
-    border-left-color: #fbbf24;
-  }
-  .vehicle-model {
-    color: #f1f5f9;
-  }
-  .vehicle-matricule {
-    color: #fbbf24;
-  }
-  .color-text {
-    color: #94a3b8;
-  }
-}
+        /* Vehicle info cell enhancements */
+        .vehicle-info-cell {
+          background: #fefce8;
+          padding: 4px 12px;
+          border-radius: 8px;
+          border-left: 4px solid #eab308;
+          display: inline-block;
+          min-width: 120px;
+        }
+        .vehicle-model {
+          font-weight: 600;
+          color: #1e293b;
+          font-size: 0.875rem;
+        }
+        .vehicle-matricule {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+          font-family: 'Courier New', monospace;
+          font-weight: 700;
+          color: #b8860b;
+          font-size: 0.8rem;
+          letter-spacing: 0.5px;
+        }
+        .vehicle-color-info {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 0.7rem;
+          font-weight: 500;
+        }
+        .color-dot {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          border: 1px solid rgba(0,0,0,0.15);
+          display: inline-block;
+          flex-shrink: 0;
+        }
+        .color-text {
+          color: #475569;
+          font-weight: 400;
+          font-family: system-ui, sans-serif;
+        }
+        @media (prefers-color-scheme: dark) {
+          .vehicle-info-cell {
+            background: #1e293b;
+            border-left-color: #fbbf24;
+          }
+          .vehicle-model {
+            color: #f1f5f9;
+          }
+          .vehicle-matricule {
+            color: #fbbf24;
+          }
+          .color-text {
+            color: #94a3b8;
+          }
+        }
       `}</style>
     </>
   );

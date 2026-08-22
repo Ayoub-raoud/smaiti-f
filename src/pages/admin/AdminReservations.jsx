@@ -1135,6 +1135,9 @@ const ReservationForm = ({
     prolongation_days: 0,
   });
 
+  // Track the current daily rate (DH per day)
+  const [dailyRate, setDailyRate] = useState(0);
+
   const [clientSearch, setClientSearch] = useState("");
   const [isNewClient, setIsNewClient] = useState(false);
   const [carMatricules, setCarMatricules] = useState([]);
@@ -1158,6 +1161,10 @@ const ReservationForm = ({
   const [showCreateSousLocationModal, setShowCreateSousLocationModal] = useState(false);
   const [newSousLocationName, setNewSousLocationName] = useState('');
   const [newSousLocationDesc, setNewSousLocationDesc] = useState('');
+
+  // Total days actually billed = base rental days + prolongation days (if enabled)
+  const totalDays = (parseInt(formData.rental_days, 10) || 0) +
+    (formData.can_extend_days ? (parseInt(formData.prolongation_days, 10) || 0) : 0);
 
   const filteredClients = useMemo(() => {
     if (!clientSearch.trim() || isNewClient || !clients || !Array.isArray(clients)) return [];
@@ -1196,22 +1203,31 @@ const ReservationForm = ({
         if (!start || !end) return 1;
         const startDate = new Date(start);
         const endDate = new Date(end);
-        startDate.setHours(0,0,0,0);
-        endDate.setHours(0,0,0,0);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(0, 0, 0, 0);
         const diffTime = Math.abs(endDate - startDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         return diffDays === 0 ? 1 : diffDays;
       };
+
+      const totalDays = 
+        editingReservation.rental_days ||
+        editingReservation.total_days ||
+        (editingReservation.start_date && editingReservation.end_date
+          ? computeRentalDays(editingReservation.start_date, editingReservation.end_date)
+          : 1);
+
+      const prolongation = editingReservation.prolongation_days || 0;
+      const baseDays = editingReservation.can_extend_days
+        ? Math.max(totalDays - prolongation, 1)
+        : totalDays;
 
       setFormData({
         start_date: editingReservation.start_date?.split("T")[0] || "",
         end_date: editingReservation.end_date?.split("T")[0] || "",
         start_time: editingReservation.start_time || "08:00",
         end_time: editingReservation.end_time || "18:00",
-        rental_days: editingReservation.rental_days || editingReservation.total_days || 
-                     (editingReservation.start_date && editingReservation.end_date 
-                       ? computeRentalDays(editingReservation.start_date, editingReservation.end_date) 
-                       : 1),
+        rental_days: baseDays,
         total_price: editingReservation.total_price || 0,
         amount_paid: editingReservation.amount_paid || 0,
         remaining_amount: editingReservation.remaining_amount || 0,
@@ -1229,25 +1245,33 @@ const ReservationForm = ({
         can_extend_days: editingReservation.can_extend_days || false,
         prolongation_days: editingReservation.prolongation_days || 0,
       });
+
+      // Set daily rate from loaded total / days
+      if (totalDays > 0) {
+        setDailyRate(editingReservation.total_price / totalDays);
+      } else {
+        setDailyRate(0);
+      }
+
       setPaymentHistory(
         Array.isArray(editingReservation.payment_history)
           ? editingReservation.payment_history
           : []
       );
       if (editingReservation.client_id) {
-        const client = clients.find(c => c.id === editingReservation.client_id);
+        const client = clients.find((c) => c.id === editingReservation.client_id);
         if (client) {
           setSelectedClient(client);
           setClientSearch(`${client.prenom} ${client.nom}`);
         }
       }
       if (editingReservation.matricule_id) {
-        const matricule = matricules.find(m => m.id === editingReservation.matricule_id);
+        const matricule = matricules.find((m) => m.id === editingReservation.matricule_id);
         if (matricule) {
           setSelectedMatricule(matricule);
           setMatriculeSearch(matricule.matricule_code);
           if (matricule.car_id) {
-            setFormData(prev => ({ ...prev, car_id: matricule.car_id }));
+            setFormData((prev) => ({ ...prev, car_id: matricule.car_id }));
           }
         }
       }
@@ -1272,37 +1296,38 @@ const ReservationForm = ({
     }
   }, [formData.matricule_id, matricules]);
 
+  // ============================================================
+  // When car is selected (and no manual rate set), set dailyRate from car
+  // ============================================================
   useEffect(() => {
-    if (!editingReservation && formData.car_id && formData.rental_days) {
+    if (formData.car_id && dailyRate === 0 && totalDays > 0) {
       const car = cars.find(c => c.id == formData.car_id);
       if (car) {
-        const total = car.price_per_day * formData.rental_days;
-        setFormData(prev => ({ ...prev, total_price: total }));
+        setDailyRate(car.price_per_day);
+        setFormData(prev => ({ ...prev, total_price: car.price_per_day * totalDays }));
       }
     }
-  }, [formData.car_id, formData.rental_days, cars, editingReservation]);
+  }, [formData.car_id, cars, dailyRate, totalDays]);
 
+  // ============================================================
+  // Recalculate total_price whenever dailyRate or totalDays changes
+  // ============================================================
   useEffect(() => {
-    const total = parseFloat(formData.total_price) || 0;
-    const paid = parseFloat(formData.amount_paid) || 0;
-    const remaining = Math.max(total - paid, 0);
-    setFormData(prev => ({ ...prev, remaining_amount: remaining }));
-  }, [formData.total_price, formData.amount_paid]);
+    if (dailyRate > 0 && totalDays > 0) {
+      setFormData(prev => ({ ...prev, total_price: dailyRate * totalDays }));
+    }
+  }, [dailyRate, totalDays]);
+  // ============================================================
 
   const isFirstRender = useRef(true);
-
   useEffect(() => {
-    // Ignorer le premier rendu
     if (isFirstRender.current) {
       isFirstRender.current = false;
       return;
     }
-
-    // Si on est en train d'éditer une réservation, ne pas modifier les heures
     if (editingReservation) {
       return;
     }
-
     const now = new Date();
     const currentDate = now.toISOString().split('T')[0];
     const currentTime = now.toTimeString().slice(0, 5);
@@ -1310,7 +1335,6 @@ const ReservationForm = ({
     if (formData.status === 'confirmed') {
       setFormData(prev => ({ ...prev, start_time: currentTime }));
     }
-
     if (formData.status === 'completed') {
       setFormData(prev => ({
         ...prev,
@@ -1326,25 +1350,36 @@ const ReservationForm = ({
     }
   }, [isOpen, dispatch]);
 
+  // Helper for total days
+  const computeTotalDaysFor = (rentalDaysVal, prolongationVal, canExtend) => {
+    const base = parseInt(rentalDaysVal, 10) || 0;
+    const prolongation = canExtend ? (parseInt(prolongationVal, 10) || 0) : 0;
+    return base + prolongation;
+  };
+
   const handleStartDateChange = (value) => {
-    setFormData(prev => ({ ...prev, start_date: value }));
-    if (value && formData.rental_days) {
+    setFormData(prev => {
+      const days = computeTotalDaysFor(prev.rental_days, prev.prolongation_days, prev.can_extend_days);
+      if (!value || days <= 0) return { ...prev, start_date: value };
       const start = new Date(value);
       const end = new Date(start);
-      end.setDate(start.getDate() + formData.rental_days);
-      setFormData(prev => ({ ...prev, end_date: end.toISOString().split("T")[0] }));
-    }
+      end.setDate(start.getDate() + days);
+      return { ...prev, start_date: value, end_date: end.toISOString().split("T")[0] };
+    });
   };
 
   const handleEndDateChange = (value) => {
-    setFormData(prev => ({ ...prev, end_date: value }));
-    if (formData.start_date && value) {
-      const start = new Date(formData.start_date);
+    setFormData(prev => {
+      if (!prev.start_date || !value) return { ...prev, end_date: value };
+      const start = new Date(prev.start_date);
       const end = new Date(value);
       const diffTime = Math.abs(end - start);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      setFormData(prev => ({ ...prev, rental_days: diffDays === 0 ? 1 : diffDays }));
-    }
+      const totalSpan = diffDays === 0 ? 1 : diffDays;
+      const prolongation = prev.can_extend_days ? (parseInt(prev.prolongation_days, 10) || 0) : 0;
+      const baseDays = Math.max(totalSpan - prolongation, 1);
+      return { ...prev, end_date: value, rental_days: baseDays };
+    });
   };
 
   const handleRentalDaysChange = (value) => {
@@ -1354,14 +1389,48 @@ const ReservationForm = ({
     }
     const days = parseInt(value, 10);
     if (!isNaN(days) && days >= 1) {
-      setFormData(prev => ({ ...prev, rental_days: days }));
-      if (formData.start_date) {
-        const start = new Date(formData.start_date);
+      setFormData(prev => {
+        const totalDaysNow = computeTotalDaysFor(days, prev.prolongation_days, prev.can_extend_days);
+        if (!prev.start_date || totalDaysNow <= 0) {
+          return { ...prev, rental_days: days };
+        }
+        const start = new Date(prev.start_date);
         const end = new Date(start);
-        end.setDate(start.getDate() + days);
-        setFormData(prev => ({ ...prev, end_date: end.toISOString().split('T')[0] }));
-      }
+        end.setDate(start.getDate() + totalDaysNow);
+        return { ...prev, rental_days: days, end_date: end.toISOString().split('T')[0] };
+      });
     }
+  };
+
+  const handleProlongationToggle = (checked) => {
+    setFormData(prev => {
+      const nextProlongation = checked ? (prev.prolongation_days || 1) : 0;
+      const next = { ...prev, can_extend_days: checked, prolongation_days: nextProlongation };
+      if (prev.start_date) {
+        const totalDaysNow = computeTotalDaysFor(prev.rental_days, nextProlongation, checked);
+        const start = new Date(prev.start_date);
+        const end = new Date(start);
+        end.setDate(start.getDate() + totalDaysNow);
+        next.end_date = end.toISOString().split('T')[0];
+      }
+      return next;
+    });
+  };
+
+  const handleProlongationDaysChange = (value) => {
+    const val = parseInt(value, 10);
+    const safeVal = val > 0 ? val : 1;
+    setFormData(prev => {
+      const next = { ...prev, prolongation_days: safeVal };
+      if (prev.start_date && prev.can_extend_days) {
+        const totalDaysNow = computeTotalDaysFor(prev.rental_days, safeVal, true);
+        const start = new Date(prev.start_date);
+        const end = new Date(start);
+        end.setDate(start.getDate() + totalDaysNow);
+        next.end_date = end.toISOString().split('T')[0];
+      }
+      return next;
+    });
   };
 
   const handleClientSelect = (client) => {
@@ -1481,6 +1550,24 @@ const ReservationForm = ({
     toast.success("Paiement supprimé");
   };
 
+  // ============================================================
+  // RECALCULER – reset dailyRate to car.price_per_day and recompute
+  // ============================================================
+  const handleRecalculateTotal = () => {
+    const car = cars.find(c => c.id == formData.car_id);
+    if (!car) {
+      toast.warning("Veuillez d'abord sélectionner un véhicule.");
+      return;
+    }
+    if (totalDays <= 0) {
+      toast.warning("Le nombre de jours doit être supérieur à 0.");
+      return;
+    }
+    setDailyRate(car.price_per_day);
+    setFormData(prev => ({ ...prev, total_price: car.price_per_day * totalDays }));
+  };
+  // ============================================================
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     let clientId = formData.client_id;
@@ -1494,6 +1581,7 @@ const ReservationForm = ({
     }
     const reservationData = {
       ...formData,
+      rental_days: totalDays,
       client_id: clientId,
       payment_history: paymentHistory
     };
@@ -1513,6 +1601,7 @@ const ReservationForm = ({
     }
     const reservationData = {
       ...formData,
+      rental_days: totalDays,
       client_id: clientId,
       payment_history: paymentHistory
     };
@@ -1669,14 +1758,7 @@ const ReservationForm = ({
                       <input
                         type="checkbox"
                         checked={formData.can_extend_days || false}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setFormData(prev => ({
-                            ...prev,
-                            can_extend_days: checked,
-                            prolongation_days: checked ? (prev.prolongation_days || 1) : 0,
-                          }));
-                        }}
+                        onChange={(e) => handleProlongationToggle(e.target.checked)}
                       />
                       <span>Le client pourra prolonger la location</span>
                     </label>
@@ -1688,10 +1770,7 @@ const ReservationForm = ({
                           className="inline-input"
                           style={{ width: '80px', padding: '0.25rem 0.5rem' }}
                           value={formData.prolongation_days || 1}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            setFormData(prev => ({ ...prev, prolongation_days: val > 0 ? val : 1 }));
-                          }}
+                          onChange={(e) => handleProlongationDaysChange(e.target.value)}
                           min="1"
                         />
                       </div>
@@ -1787,7 +1866,44 @@ const ReservationForm = ({
             <div className="inline-section">
               <div className="inline-section-header"><DollarSign size={18} /><h3>Paiement et statut</h3></div>
               <div className="inline-grid-2">
-                <div className="inline-field"><label>Prix total (DH) *</label><input type="number" step="0.01" className="inline-input" value={formData.total_price} onChange={(e) => setFormData(prev => ({ ...prev, total_price: parseFloat(e.target.value) }))} required /></div>
+                <div className="inline-field">
+                  <label>Prix total (DH) *</label>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="inline-input"
+                      value={formData.total_price}
+                      onChange={(e) => {
+                        const newTotal = parseFloat(e.target.value) || 0;
+                        // Update daily rate based on new total and current days
+                        if (totalDays > 0) {
+                          setDailyRate(newTotal / totalDays);
+                        }
+                        setFormData(prev => ({ ...prev, total_price: newTotal }));
+                      }}
+                      required
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="inline-secondary-btn"
+                      onClick={handleRecalculateTotal}
+                      style={{
+                        padding: '0.4rem 0.8rem',
+                        fontSize: '0.75rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Recalculer le total à partir du prix journalier du véhicule"
+                      disabled={!formData.car_id}
+                    >
+                      <RefreshCw size={14} /> Recalculer
+                    </button>
+                  </div>
+                </div>
                 <div className="inline-field"><label>Montant payé (DH)</label><input type="number" step="0.01" className="inline-input" value={formData.amount_paid} readOnly style={{ backgroundColor: "#f3f4f6" }} /></div>
                 <div className="inline-field"><label>Reste à payer (DH)</label><input type="number" step="0.01" className="inline-input" value={formData.remaining_amount} readOnly style={{ backgroundColor: "#f3f4f6" }} /></div>
                 <div className="inline-field"><label>Statut</label>
@@ -1943,7 +2059,6 @@ const ReservationForm = ({
     </div>
   );
 };
-
 // ==================== ContractViewPage ====================
 const ContractViewPage = ({ reservation, onClose, currentUser, clients }) => {
   const dispatch = useDispatch();
@@ -3151,7 +3266,7 @@ export default function AdminReservations() {
                       const client = clients.find(c => c.id === r.client_id);
                       const car = cars.find(c => c.id === r.car_id);
                       const mat = matricules.find(m => m.id === r.matricule_id);
-                      const days = calculateDays(r.start_date, r.end_date);
+                      const days = r.rental_days || 1;                      
                       const daysRemaining = calculateDaysRemaining(r);
                       const secondDriver = clients.find(c => c.id === r.second_driver_client_id);
                       const rowPaymentHistory = Array.isArray(r.payment_history) ? r.payment_history : [];
